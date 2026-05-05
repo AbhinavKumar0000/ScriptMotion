@@ -3,18 +3,20 @@ from rich.console import Console
 from rich.panel import Panel
 from src.prompt_builder import build_system_prompt, build_user_message
 from src.gemini_client import get_component_from_gemini
+from src.claude_client import get_component_from_claude
 from src.component_writer import write_component
 from src.validator import validate_component
 from src.renderer import render_video
 
 console = Console(force_terminal=True, highlight=False)
-MAX_RETRIES = 2
+MAX_RETRIES = 1
 
 
-def run(topic: str):
+def run(topic: str, client: str = "gemini"):
     console.print(Panel(
         f"[bold cyan]Educational Video Pipeline[/bold cyan]\n\n"
-        f"Topic: [yellow]{topic}[/yellow]",
+        f"Topic: [yellow]{topic}[/yellow]\n"
+        f"Client: [yellow]{client}[/yellow]",
         border_style="cyan"
     ))
 
@@ -25,17 +27,25 @@ def run(topic: str):
 
     for attempt in range(1, MAX_RETRIES + 2):
         if attempt > 1:
+            target = "Claude" if client.lower() == "claude" else "Gemini"
             console.print(
                 f"[yellow]Retry {attempt - 1}/{MAX_RETRIES} — "
-                "sending compile error back to Gemini...[/yellow]"
+                f"sending compile error back to {target}...[/yellow]"
             )
 
         # Step 1: Generate component (or regenerate with error context)
-        tsx_code = get_component_from_gemini(
-            system_prompt,
-            user_message,
-            retry_with_error=last_error,
-        )
+        if client.lower() == "claude":
+            tsx_code = get_component_from_claude(
+                system_prompt,
+                user_message,
+                retry_with_error=last_error,
+            )
+        else:
+            tsx_code = get_component_from_gemini(
+                system_prompt,
+                user_message,
+                retry_with_error=last_error,
+            )
 
         # Step 2: Write to Remotion project
         write_component(tsx_code)

@@ -40,6 +40,14 @@ def _clean(raw: str) -> str:
             break
     if raw.endswith("```"):
         raw = raw.rsplit("```", 1)[0]
+    raw = raw.strip()
+
+    # Keep only the TypeScript file body if the model adds prose.
+    import_anchor = 'import React from "react";'
+    idx = raw.find(import_anchor)
+    if idx != -1:
+        raw = raw[idx:]
+
     return raw.strip()
 
 
@@ -50,6 +58,22 @@ def _is_complete(code: str) -> bool:
         return False
     tail = code.strip()[-30:].strip()
     return tail.endswith("};") or tail.endswith("}")
+
+
+def _model_sequence(retry_with_error: str | None) -> tuple[str, ...]:
+    """
+    Keep costs down:
+    - On first generation, try primary then fallback (deduplicated).
+    - On compile-error retries, hit primary only to avoid duplicate paid calls.
+    """
+    if retry_with_error:
+        return (PRIMARY_MODEL,)
+    ordered = (PRIMARY_MODEL, FALLBACK_MODEL)
+    deduped: list[str] = []
+    for model in ordered:
+        if model and model not in deduped:
+            deduped.append(model)
+    return tuple(deduped)
 
 
 def get_component_from_gemini(
@@ -72,7 +96,7 @@ def get_component_from_gemini(
             "Fix ONLY the error above. Return the complete corrected file."
         )
 
-    for model_name in (PRIMARY_MODEL, FALLBACK_MODEL):
+    for model_name in _model_sequence(retry_with_error):
         try:
             console.print(f"[yellow]>> Calling {model_name}...[/yellow]")
             raw = _clean(_call_gemini(model_name, system_prompt, msg))
@@ -80,6 +104,12 @@ def get_component_from_gemini(
             console.print(f"[cyan]   Received {line_count} lines[/cyan]")
 
             if not _is_complete(raw):
+                if retry_with_error and line_count >= MIN_VALID_LINES:
+                    console.print(
+                        "[yellow][WARN] Retry output may be partial; "
+                        "returning it for local TypeScript validation.[/yellow]"
+                    )
+                    return raw
                 console.print(
                     f"[red][WARN] Output looks truncated ({line_count} lines, "
                     f"min {MIN_VALID_LINES}). Retrying model...[/red]"

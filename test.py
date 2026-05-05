@@ -2,11 +2,14 @@
 #  EDIT THIS FILE TO CHANGE THE VIDEO TOPIC
 # ============================================================
 
-TOPIC = "Binary Search"
+TOPIC = "Bubble Sort"
+
+# Choose client: "gemini" or "claude"
+CLIENT = "claude" 
 
 # ============================================================
 #  Then run:  python main.py
 # ============================================================
 
 from main import run
-run(TOPIC)
+run(TOPIC, client=CLIENT)

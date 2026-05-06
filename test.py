@@ -2,10 +2,10 @@
 #  EDIT THIS FILE TO CHANGE THE VIDEO TOPIC
 # ============================================================
 
-TOPIC = "Bubble Sort"
+TOPIC = "Backpropagation in Neural Networks"
 
 # Choose client: "gemini" or "claude"
-CLIENT = "claude" 
+CLIENT = "gemini" 
 
 # ============================================================
 #  Then run:  python main.py

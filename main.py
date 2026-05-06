@@ -7,6 +7,7 @@ from src.claude_client import get_component_from_claude
 from src.component_writer import write_component
 from src.validator import validate_component
 from src.renderer import render_video
+from src.quick_fixes import try_auto_fix_component
 
 console = Console(force_terminal=True, highlight=False)
 MAX_RETRIES = 1
@@ -54,6 +55,13 @@ def run(topic: str, client: str = "gemini"):
         valid, error = validate_component()
         if valid:
             break
+
+        # Step 3b: Apply local auto-fixes before spending another API call
+        if try_auto_fix_component(error):
+            valid_after_fix, error_after_fix = validate_component()
+            if valid_after_fix:
+                break
+            error = error_after_fix
 
         last_error = error
         if attempt == MAX_RETRIES + 1:

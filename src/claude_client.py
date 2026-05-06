@@ -23,7 +23,9 @@ def _call_claude(model_name: str, system_prompt: str, user_message: str) -> tupl
     response = client.messages.create(
         model=model_name,
         system=system_prompt,
-        max_tokens=8192,
+        # Bump output budget to reduce frequent truncation retries.
+        # Cheaper than paying for an extra full call in many cases.
+        max_tokens=12288,
         temperature=0.25,
         messages=[
             {"role": "user", "content": user_message}
@@ -113,6 +115,15 @@ def get_component_from_claude(
             raw = _clean(raw_text)
             line_count = len([l for l in raw.splitlines() if l.strip()])
             console.print(f"[cyan]   Received {line_count} lines[/cyan]")
+
+            # Cost-control: if Claude hits max_tokens, do NOT automatically fall back.
+            # Return what we got and let local TypeScript validation decide.
+            if stop_reason == "max_tokens" and line_count >= MIN_VALID_LINES:
+                console.print(
+                    "[yellow][WARN] Claude hit max_tokens; returning output for local validation "
+                    "instead of paying for another model call.[/yellow]"
+                )
+                return raw
 
             if not _is_complete(raw, stop_reason):
                 if retry_with_error and line_count >= MIN_VALID_LINES:

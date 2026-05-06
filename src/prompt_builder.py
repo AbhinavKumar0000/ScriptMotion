@@ -21,7 +21,9 @@ EDUCATIONAL INTENT:
 - Prioritize visual intuition over text explanation.
 
 SCRIPT-FIRST TEACHING CONTRACT (MANDATORY):
-- First, internally create a 5-beat teaching script before writing JSX:
+- First, internally create a 5-beat VISUAL script (choreography) before writing JSX.
+  This is NOT a narration script. Each beat must be described as visuals and actions:
+  what appears, where it is, what moves, what transforms, and what the viewer learns visually.
   1) Hook: what learner sees first and why it matters
   2) Entities: key objects and their roles
   3) Mechanism: what changes over time and causal direction
@@ -30,6 +32,7 @@ SCRIPT-FIRST TEACHING CONTRACT (MANDATORY):
 - Then map each beat to a strict frame window and render in that order.
 - Each beat must answer: "What new thing does learner understand now?"
 - If a beat does not add understanding, remove it.
+ - Text usage inside beats must be minimal (short labels only); understanding must come from motion and graphics.
 
 MOTION RULES:
 - Smooth, precise motion only. No jitter, wiggle, random drift, or idle particles.
@@ -47,6 +50,15 @@ FRAME/LAYOUT RULES:
 - All charts/graphs/axes/labels must be pixel-aligned and visually balanced.
 - Maintain consistent spacing scale (8/12/16/24/32/48 px rhythm).
 
+COMPLEXITY BUDGET (CRITICAL):
+- Do NOT overload the screen. Too many objects causes mapping/alignment failures.
+- Maximum simultaneous “primary objects” on screen: 10
+  (examples: nodes, cards, request dots, buckets, neurons, bars).
+- Maximum simultaneous connectors/arrows/lines: 14
+- If topic needs more entities, show them in stages (enter/exit) instead of all at once.
+- No roaming: objects only move when explaining a causal step, then settle.
+- Prefer grouped composites (e.g., one “network layer” group) over many tiny independent elements.
+
 TEXT & TYPOGRAPHY RULES (CRITICAL):
 - NO emojis anywhere in text (no unicode pictograms like ✅ ❌ ⚠️ 🚀 etc).
 - Minimum text size: 24px for labels, 32px for section headings, 56px for main heading.
@@ -57,6 +69,8 @@ TEXT & TYPOGRAPHY RULES (CRITICAL):
 - Keep text blocks short and readable; avoid dense paragraphs.
 - Align all text to a clear grid; avoid arbitrary x/y placements.
 - Keep consistent type hierarchy through the whole video.
+- Prefer labels attached to objects over standalone explanatory text.
+- If you find yourself writing more than ~10-15 words on screen at once, replace it with visuals.
 
 SCENE GATING RULES (CRITICAL):
 - Use Sequence or explicit enter+exit opacity windows for each scene/object.
@@ -67,6 +81,14 @@ SCENE GATING RULES (CRITICAL):
   const inOp = interpolate(frame, [start, start + 20], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   const outOp = interpolate(frame, [end - 20, end], [1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   const op = inOp * outOp;
+
+NON-BLANK VIDEO GUARANTEE (MANDATORY):
+- The component must NEVER render a blank/empty screen.
+- Always render a background fill plus a small persistent title label (e.g. top-left) with opacity 1.0 for ALL frames.
+- Always render a faint scaffold/legend/axis/arena container (one core scaffold) with opacity 1.0 for ALL frames.
+- NEVER apply a global opacity gate to the root `AbsoluteFill` that could make the entire scene invisible.
+- Any scene gating must be applied to scene groups only, not to the entire composition.
+- Ensure at least one major visual element is visible by frame 15 and remains visible (as scaffold/arena) throughout.
 
 STORY ARC:
 - 0-6s: quick title label + visual world setup
@@ -89,6 +111,8 @@ FORBIDDEN:
 - emojis, decorative unicode symbols, and sticker-like marks
 - tiny unreadable text, inconsistent font sizes, or random text placement
 - misaligned axes, uneven chart spacing, or off-center labels
+- blank frames (nothing visible)
+- root-level opacity = 0 or conditional early-returns that hide content
 - CSS keyframes/transitions/animations/setTimeout
 - HTML canvas element
 - imports other than react/remotion
@@ -107,6 +131,7 @@ Create a premium visualization-only educational animation for this topic.
 
 Hard requirements:
 - Build the video from a clear internal teaching script, then render beat-by-beat.
+- The internal script must be a VISUAL choreography script (graphics + motion), not a narration/text script.
 - Make it teachable from visuals alone.
 - No random decorative elements; every element must serve explanation.
 - No out-of-frame content at any point.
@@ -121,6 +146,7 @@ Hard requirements:
 - Output should feel like high-quality educational visualization, not simple element rendering.
 - Ensure old scene elements do not persist and clutter later scenes.
 - Avoid key takeaway cards, bullet summaries, and text-heavy outro.
+- Avoid on-screen explanation paragraphs; use graphics and motion to teach.
 - Do not use emojis or pictogram characters anywhere.
 - Use readable professional text sizing and spacing.
 - Ensure graph/chart elements are perfectly aligned with labels and guides.

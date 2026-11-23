@@ -9,9 +9,9 @@ from rich.panel import Panel
 console = Console(force_terminal=True, highlight=False)
 
 REMOTION_PACKAGE_JSON = {
-    "name": "education-video",
+    "name": "scriptmotion",
     "version": "1.0.0",
-    "description": "AI-generated educational visualizations",
+    "description": "ScriptMotion: Model-Agnostic Agentic Orchestration for Declarative Motion Graphics Compilation",
     "scripts": {
         "build": "remotion render",
         "studio": "remotion studio"
@@ -108,18 +108,23 @@ def check_node():
         ))
         return False
 
+def write_if_missing(path: Path, content: str) -> None:
+    if not path.exists():
+        path.write_text(content, encoding="utf-8")
+
+
 def create_scaffold():
     base = Path("remotion_project")
     (base / "src" / "compositions").mkdir(parents=True, exist_ok=True)
     Path("output").mkdir(exist_ok=True)
 
-    (base / "package.json").write_text(json.dumps(REMOTION_PACKAGE_JSON, indent=2))
-    (base / "tsconfig.json").write_text(json.dumps(TSCONFIG, indent=2))
-    (base / "remotion.config.ts").write_text(REMOTION_CONFIG)
-    (base / "src" / "Root.tsx").write_text(ROOT_TSX)
-    (base / "src" / "index.ts").write_text(INDEX_TS)
-    (base / "src" / "compositions" / "EducationVideo.tsx").write_text(PLACEHOLDER_COMPONENT)
-    console.print("[green][OK] Remotion project scaffold created[/green]")
+    write_if_missing(base / "package.json", json.dumps(REMOTION_PACKAGE_JSON, indent=2))
+    write_if_missing(base / "tsconfig.json", json.dumps(TSCONFIG, indent=2))
+    write_if_missing(base / "remotion.config.ts", REMOTION_CONFIG)
+    write_if_missing(base / "src" / "Root.tsx", ROOT_TSX)
+    write_if_missing(base / "src" / "index.ts", INDEX_TS)
+    write_if_missing(base / "src" / "compositions" / "EducationVideo.tsx", PLACEHOLDER_COMPONENT)
+    console.print("[green][OK] Remotion project scaffold ready[/green]")
 
 def npm_install():
     console.print("[yellow]Running npm install (this may take 1-2 minutes)...[/yellow]")
@@ -136,7 +141,7 @@ def npm_install():
         sys.exit(1)
 
 def main():
-    console.print(Panel("[bold cyan]Educational Video Pipeline — Setup[/bold cyan]", border_style="cyan"))
+    console.print(Panel("[bold cyan]ScriptMotion — Setup[/bold cyan]", border_style="cyan"))
     if not check_node():
         sys.exit(1)
     create_scaffold()
@@ -144,8 +149,11 @@ def main():
     console.print(Panel(
         "[bold green]Setup complete![/bold green]\n\n"
         "Next steps:\n"
-        "1. Add your GEMINI_API_KEY to .env\n"
-        "2. Edit TOPIC in test.py\n"
+        "1. Copy .env.example to .env and add your API key:\n"
+        "   - GEMINI_API_KEY (from aistudio.google.com)\n"
+        "   - ANTHROPIC_API_KEY (from console.anthropic.com)\n"
+        "   - NVIDIA_API_KEY (from build.nvidia.com, starts with nvapi-)\n"
+        "2. Edit TOPIC and CLIENT in test.py\n"
         "3. Run: python test.py",
         title="Done", border_style="green"
     ))

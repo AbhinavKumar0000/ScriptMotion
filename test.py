@@ -4,11 +4,11 @@
 
 TOPIC = "Backpropagation in Neural Networks"
 
-# Choose client: "gemini" or "claude"
-CLIENT = "gemini" 
+# Choose client: "gemini", "claude", or "nvidia"
+CLIENT = "gemini"
 
 # ============================================================
-#  Then run:  python main.py
+#  Then run:  python test.py
 # ============================================================
 
 from main import run

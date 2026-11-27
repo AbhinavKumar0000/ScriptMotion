@@ -1,273 +1,395 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="light dark">
 <title>ScriptMotion</title>
+<script>
+  // pick the theme before first paint: saved choice, else the system setting
+  (function () {
+    var t = null; try { t = localStorage.getItem("sm-theme"); } catch (e) {}
+    if (t !== "light" && t !== "dark") t = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+    document.documentElement.dataset.theme = t;
+  })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg: #F5F5F7; --surface: #FFFFFF; --surface-2: #FAFAFC; --fill: rgba(118,118,128,0.10); --fill-2: rgba(118,118,128,0.17);
-  --text: #1D1D1F; --text-2: #6E6E73; --text-3: #8E8E93; --line: rgba(0,0,0,0.08); --line-2: rgba(0,0,0,0.14);
-  --accent: #0071E3; --accent-hover: #0077ED; --accent-soft: rgba(0,113,227,0.10); --accent-line: rgba(0,113,227,0.45);
-  --green: #1E9E4A; --green-soft: rgba(30,158,74,0.12); --red: #D70015; --red-soft: rgba(215,0,21,0.08); --amber: #C25E00; --amber-soft: rgba(255,149,0,0.14);
-  --shadow: 0 1px 1px rgba(0,0,0,0.03), 0 6px 24px rgba(0,0,0,0.06);
-  --menu-shadow: 0 12px 40px rgba(0,0,0,0.16), 0 0 0 0.5px rgba(0,0,0,0.12);
-  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
-  --display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
-  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+  color-scheme: dark;
+  --bg: #0A0A0A; --panel: #111111; --raise: #171717; --raise-2: #1F1F1F;
+  --line: rgba(255,255,255,0.07); --line-2: rgba(255,255,255,0.12); --line-3: rgba(255,255,255,0.22);
+  --text: #EDEDED; --text-2: #A1A1A1; --text-3: #7C7C7C;
+  --primary: #FAFAFA; --on-primary: #0A0A0A;
+  --glow: rgba(255,255,255,0.45); --glare: rgba(255,255,255,0.07); --glare-edge: rgba(255,255,255,0.32);
+  --bar: rgba(10,10,10,0.72); --menu: rgba(24,24,24,0.94); --shadow: 0 18px 50px rgba(0,0,0,0.6);
+  --orb: 236,236,236;
+  --green: #45D483; --amber: #F5A524; --red: #F25C5C;
+  --font: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --mono: "Geist Mono", ui-monospace, "SF Mono", Consolas, monospace;
+  --ease: cubic-bezier(.2,.7,.2,1);
 }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
-  --bg: #000000; --surface: #1C1C1E; --surface-2: #222225; --fill: rgba(118,118,128,0.20); --fill-2: rgba(118,118,128,0.30);
-  --text: #F5F5F7; --text-2: #A1A1A6; --text-3: #7C7C80; --line: rgba(255,255,255,0.09); --line-2: rgba(255,255,255,0.16);
-  --accent: #2997FF; --accent-hover: #47A6FF; --accent-soft: rgba(41,151,255,0.16); --accent-line: rgba(41,151,255,0.6);
-  --green: #30D158; --green-soft: rgba(48,209,88,0.16); --red: #FF453A; --red-soft: rgba(255,69,58,0.14); --amber: #FF9F0A; --amber-soft: rgba(255,159,10,0.16);
-  --shadow: 0 0 0 1px rgba(255,255,255,0.06);
-  --menu-shadow: 0 12px 40px rgba(0,0,0,0.6), 0 0 0 0.5px rgba(255,255,255,0.14);
-} }
-:root[data-theme="dark"] {
-  --bg: #000000; --surface: #1C1C1E; --surface-2: #222225; --fill: rgba(118,118,128,0.20); --fill-2: rgba(118,118,128,0.30);
-  --text: #F5F5F7; --text-2: #A1A1A6; --text-3: #7C7C80; --line: rgba(255,255,255,0.09); --line-2: rgba(255,255,255,0.16);
-  --accent: #2997FF; --accent-hover: #47A6FF; --accent-soft: rgba(41,151,255,0.16); --accent-line: rgba(41,151,255,0.6);
-  --green: #30D158; --green-soft: rgba(48,209,88,0.16); --red: #FF453A; --red-soft: rgba(255,69,58,0.14); --amber: #FF9F0A; --amber-soft: rgba(255,159,10,0.16);
-  --shadow: 0 0 0 1px rgba(255,255,255,0.06);
-  --menu-shadow: 0 12px 40px rgba(0,0,0,0.6), 0 0 0 0.5px rgba(255,255,255,0.14);
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #F7F7F8; --panel: #FFFFFF; --raise: #F1F1F3; --raise-2: #E7E7EA;
+  --line: rgba(0,0,0,0.08); --line-2: rgba(0,0,0,0.13); --line-3: rgba(0,0,0,0.26);
+  --text: #111113; --text-2: #4E4E56; --text-3: #6E6E76;
+  --primary: #111113; --on-primary: #FFFFFF;
+  --glow: rgba(0,0,0,0.16); --glare: rgba(0,0,0,0.035); --glare-edge: rgba(0,0,0,0.22);
+  --bar: rgba(247,247,248,0.8); --menu: rgba(255,255,255,0.96); --shadow: 0 18px 50px rgba(0,0,0,0.12);
+  --orb: 22,22,26;
+  --green: #15913F; --amber: #B86E00; --red: #D42B2B;
 }
 * { box-sizing: border-box; }
-html { -webkit-font-smoothing: antialiased; }
-body { margin: 0; background: var(--bg); color: var(--text); font: 17px/1.47 var(--font); letter-spacing: -0.01em; }
-button, input, textarea, select { font: inherit; color: inherit; letter-spacing: inherit; }
-a { color: var(--accent); text-decoration: none; }
-:focus-visible { outline: 3px solid var(--accent-soft); outline-offset: 1px; border-radius: 8px; }
+html { -webkit-font-smoothing: antialiased; background: var(--bg); }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.55 var(--font); letter-spacing: -0.006em; transition: background .3s, color .3s; }
+button, input, textarea { font: inherit; color: inherit; letter-spacing: inherit; }
+a { color: var(--text); text-decoration: none; }
+::selection { background: var(--line-3); }
+:focus-visible { outline: 2px solid var(--line-3); outline-offset: 2px; border-radius: 8px; }
 [hidden] { display: none !important; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 
-/* ------------------------------------------------------------- top bar */
-.bar { position: sticky; top: 0; z-index: 20; height: 52px; display: flex; align-items: center; gap: 28px; padding: 0 max(20px, calc(50% - 560px));
-  background: color-mix(in srgb, var(--bg) 78%, transparent); backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px); border-bottom: 1px solid var(--line); }
-.mark { display: flex; align-items: center; gap: 9px; font: 600 17px var(--display); color: var(--text); }
-.mark svg { display: block; }
-.nav { display: flex; gap: 22px; font-size: 14px; }
-.nav a { color: var(--text-2); }
-.nav a[aria-current="page"], .nav a:hover { color: var(--text); }
+/* ------------------------------------------------------- glare surfaces */
+/* a soft light follows the pointer across the surface and along its border */
+.glare { position: relative; isolation: isolate; }
+.glare::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: -1; opacity: 0; transition: opacity .35s var(--ease);
+  background: radial-gradient(420px circle at var(--mx, 50%) var(--my, 50%), var(--glare), transparent 45%); }
+.glare::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; padding: 1px; opacity: 0; transition: opacity .35s var(--ease);
+  background: radial-gradient(260px circle at var(--mx, 50%) var(--my, 50%), var(--glare-edge), transparent 60%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
+.glare:hover::before, .glare:hover::after, .glare:focus-within::before { opacity: 1; }
 
-/* -------------------------------------------------------------- common */
-.page { max-width: 1120px; margin: 0 auto; padding: 0 20px 96px; }
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: 980px; padding: 9px 20px; font-size: 15px; font-weight: 500; cursor: pointer; white-space: nowrap; transition: background .15s; }
-.btn.primary { background: var(--accent); color: #fff; }
-.btn.primary:hover { background: var(--accent-hover); }
-.btn.primary:disabled { opacity: .4; cursor: default; }
-.btn.plain { background: var(--fill); color: var(--text); }
-.btn.plain:hover { background: var(--fill-2); }
-.btn.link { background: transparent; color: var(--accent); padding: 6px 4px; font-size: 14px; }
-.card { background: var(--surface); border-radius: 18px; box-shadow: var(--shadow); }
-h1, h2, h3 { font-family: var(--display); letter-spacing: -0.02em; }
-.section-title { font: 600 22px var(--display); margin: 0 0 16px; letter-spacing: -0.015em; }
+/* ------------------------------------------------------------- top bar */
+.bar { position: sticky; top: 0; z-index: 20; height: 56px; display: flex; align-items: center; gap: 28px; padding: 0 max(24px, calc(50% - 580px));
+  background: var(--bar); backdrop-filter: saturate(160%) blur(18px); -webkit-backdrop-filter: saturate(160%) blur(18px); border-bottom: 1px solid var(--line); }
+.mark { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px; letter-spacing: -0.01em; }
+.mark canvas { width: 22px; height: 22px; }
+.nav { display: flex; gap: 4px; font-size: 14px; }
+.nav a { color: var(--text-2); padding: 6px 12px; border-radius: 8px; transition: color .15s, background .15s; }
+.nav a:hover { color: var(--text); background: var(--raise); }
+.nav a[aria-current="page"] { color: var(--text); }
+.bar .end { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.icon-btn { display: grid; place-items: center; width: 34px; height: 34px; border: 0; border-radius: 9px; background: transparent; color: var(--text-2); cursor: pointer; }
+.icon-btn:hover { background: var(--raise); color: var(--text); }
+.icon-btn svg { width: 17px; height: 17px; }
+:root[data-theme="dark"] .i-moon, :root[data-theme="light"] .i-sun { display: none; }
+
+/* pills: an orb with a word beside it, the library's signature component */
+.pill { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 14px 0 6px; border-radius: 999px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--line); color: var(--text-2); font-size: 13.5px; white-space: nowrap; }
+.pill canvas { width: 22px; height: 22px; flex: none; }
+.pill b { font-weight: 500; color: var(--text); }
+a.pill:hover { box-shadow: inset 0 0 0 1px var(--line-2); color: var(--text); }
+.pill .shine { background: linear-gradient(90deg, var(--text-3) 0%, var(--text) 40%, var(--text-3) 80%); background-size: 220% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: shine 2.2s linear infinite; }
+@keyframes shine { from { background-position: 120% 0; } to { background-position: -100% 0; } }
+
+.page { max-width: 1160px; margin: 0 auto; padding: 0 24px 120px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: 10px; padding: 9px 16px; font-size: 14px; font-weight: 500; cursor: pointer; white-space: nowrap; transition: background .15s, opacity .15s, transform .1s; }
+.btn:active { transform: scale(.98); }
+.btn.primary { background: var(--primary); color: var(--on-primary); }
+.btn.primary:disabled { opacity: .5; cursor: default; }
+.btn.ghost { background: var(--raise); color: var(--text); box-shadow: inset 0 0 0 1px var(--line); }
+.btn.ghost:hover { background: var(--raise-2); }
+.card { background: var(--panel); border-radius: 16px; box-shadow: inset 0 0 0 1px var(--line); }
+h1, h2, h3 { letter-spacing: -0.03em; }
+canvas.orb { display: block; }
 
 /* --------------------------------------------------------------- create */
-.hero { text-align: center; padding: 72px 0 36px; }
-.hero h1 { font-size: 48px; line-height: 1.08; font-weight: 600; margin: 0; letter-spacing: -0.03em; }
-.hero p { margin: 14px auto 0; max-width: 560px; font-size: 19px; color: var(--text-2); line-height: 1.42; }
-.composer { max-width: 780px; margin: 0 auto; }
-.composer .topic { width: 100%; border: 0; outline: 0; background: transparent; padding: 24px 26px 8px; font: 500 24px var(--display); letter-spacing: -0.02em; }
-.composer .topic::placeholder, .composer textarea::placeholder { color: var(--text-3); }
-.composer textarea { width: 100%; border: 0; outline: 0; background: transparent; padding: 8px 26px 16px; min-height: 92px; resize: none; line-height: 1.5; font-size: 17px; display: block; }
-.opts { display: grid; grid-template-columns: auto 1fr; gap: 12px 18px; align-items: center; padding: 16px 26px 18px; border-top: 1px solid var(--line); }
-.opts .lbl { font-size: 13px; color: var(--text-2); }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.chip { border: 0; background: var(--fill); border-radius: 980px; padding: 5px 13px; font-size: 14px; cursor: pointer; color: var(--text); transition: background .12s, color .12s; font-variant-numeric: tabular-nums; }
-.chip:hover { background: var(--fill-2); }
-.chip[aria-checked="true"] { background: var(--text); color: var(--bg); }
-.foot { display: flex; align-items: center; gap: 10px; padding: 12px 14px 12px 18px; border-top: 1px solid var(--line); background: var(--surface-2); border-radius: 0 0 18px 18px; }
+.hero { position: relative; text-align: center; padding: 18px 0 34px; }
+.hero-orb { width: 340px; height: 340px; margin: 0 auto -34px; display: block; touch-action: none; cursor: crosshair; }
+.hero .pill { margin-bottom: 22px; position: relative; }
+.hero h1 { font-size: 56px; line-height: 1.02; font-weight: 600; margin: 0; letter-spacing: -0.045em; }
+.hero p { margin: 16px auto 0; max-width: 520px; font-size: 17px; color: var(--text-2); line-height: 1.5; }
+
+.composer { max-width: 820px; margin: 0 auto; border-radius: 20px; }
+.composer .topic { width: 100%; border: 0; outline: 0; background: transparent; padding: 24px 26px 6px; font-size: 22px; font-weight: 500; letter-spacing: -0.02em; }
+.composer textarea { width: 100%; border: 0; outline: 0; background: transparent; padding: 8px 26px 18px; min-height: 84px; resize: none; line-height: 1.55; font-size: 15px; color: var(--text); display: block; }
+.composer ::placeholder { color: var(--text-3); }
+.settings { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); border-top: 1px solid var(--line); }
+.setting { padding: 18px 26px 20px; min-width: 0; }
+.setting + .setting { border-left: 1px solid var(--line); }
+.setting .lbl { display: flex; justify-content: space-between; align-items: baseline; height: 20px; font-size: 13px; color: var(--text-2); margin-bottom: 10px; }
+.setting .lbl span:last-child { color: var(--text-3); font-size: 12.5px; }
+
+/* audience: a scroll wheel with snap; the centred row is the choice */
+.wheel { position: relative; height: 120px; }
+.wheel .rail { position: absolute; z-index: 0; left: 0; right: 0; top: 40px; height: 40px; border-radius: 10px; background: var(--raise-2); box-shadow: inset 0 0 0 1px var(--line-2); pointer-events: none; transition: box-shadow .2s; }
+.wheel ul { position: relative; z-index: 1; list-style: none; margin: 0; padding: 40px 0; height: 120px; overflow-y: auto; scroll-snap-type: y mandatory; scrollbar-width: none; outline: none;
+  -webkit-mask-image: linear-gradient(transparent, #000 32%, #000 68%, transparent); mask-image: linear-gradient(transparent, #000 32%, #000 68%, transparent); }
+.wheel ul::-webkit-scrollbar { display: none; }
+.wheel li { height: 40px; display: flex; align-items: center; gap: 12px; padding: 0 16px; scroll-snap-align: center; cursor: pointer; font-size: 15px; color: var(--text-3); transition: color .15s; }
+.wheel li span { flex: 1; }
+.wheel li small { font-size: 12.5px; color: var(--text-3); }
+.wheel li[aria-selected="true"] { color: var(--text); font-weight: 500; }
+.wheel li[aria-selected="true"] small { color: var(--text-2); font-weight: 400; }
+.wheel:focus-within .rail { box-shadow: inset 0 0 0 1px var(--line-3); }
+
+/* length: a ruler that slides under a fixed needle, hard stops at 30 s and 5 min */
+.meter { position: relative; height: 120px; display: grid; grid-template-rows: 46px 1fr; }
+.meter .readout { display: flex; align-items: baseline; justify-content: center; gap: 6px; font-family: var(--mono); font-size: 32px; font-weight: 500; letter-spacing: -0.04em; color: var(--text); transition: color .2s; }
+.meter .readout small { font-family: var(--font); font-size: 12.5px; color: var(--text-3); letter-spacing: 0; }
+.meter.limit .readout { color: var(--amber); }
+.ruler { position: relative; overflow: hidden; cursor: grab; touch-action: none; border-radius: 10px; outline: none;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent); mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent); }
+.ruler:active { cursor: grabbing; }
+.ruler .strip { position: absolute; top: 0; bottom: 0; left: 0; will-change: transform; }
+.ruler .strip.settle { transition: transform .45s cubic-bezier(.3,1.4,.5,1); }
+.ruler .base { position: absolute; bottom: 22px; left: 0; height: 1px; background: var(--line-2); }
+.ruler .fillbar { position: absolute; bottom: 21px; left: 0; height: 3px; border-radius: 2px; background: var(--text-3); opacity: .55; }
+.ruler .stop { position: absolute; bottom: 14px; width: 3px; height: 26px; margin-left: -1px; border-radius: 2px; background: var(--text-2); }
+.ruler .stop span { position: absolute; bottom: -14px; left: 50%; transform: translateX(-50%); font: 11px var(--mono); color: var(--text-2); white-space: nowrap; }
+.ruler .tick { position: absolute; bottom: 22px; width: 1px; height: 10px; background: var(--line-3); }
+.ruler .tick.major { height: 18px; background: var(--text-3); }
+.ruler .tick span { position: absolute; bottom: -18px; left: 50%; transform: translateX(-50%); font: 11px var(--mono); color: var(--text-3); white-space: nowrap; }
+.ruler .needle { position: absolute; left: 50%; bottom: 16px; width: 2px; height: 34px; margin-left: -1px; border-radius: 1px; background: var(--primary); box-shadow: 0 0 12px var(--glow); transition: background .2s; }
+.meter.limit .needle { background: var(--amber); }
+.ruler:focus-visible .needle { box-shadow: 0 0 0 3px var(--line-3); }
+
+.foot { display: flex; align-items: center; gap: 10px; padding: 12px 14px 12px 16px; border-top: 1px solid var(--line); }
 .foot .spacer { flex: 1; }
-.kbd { font-size: 12px; color: var(--text-3); margin-right: 4px; }
-.form-error { max-width: 780px; margin: 12px auto 0; color: var(--red); font-size: 14px; text-align: center; min-height: 20px; }
+.kbd { font: 12px var(--mono); color: var(--text-3); margin-right: 4px; }
+.form-error { max-width: 820px; margin: 12px auto 0; color: var(--red); font-size: 14px; text-align: center; min-height: 20px; }
 
 /* model menu */
 .menu-wrap { position: relative; }
-.menu-btn { display: inline-flex; align-items: center; gap: 8px; border: 0; background: transparent; border-radius: 8px; padding: 6px 10px; font-size: 14px; cursor: pointer; color: var(--text-2); }
-.menu-btn:hover, .menu-btn[aria-expanded="true"] { background: var(--fill); color: var(--text); }
+.menu-btn { display: inline-flex; align-items: center; gap: 8px; border: 0; background: transparent; border-radius: 9px; padding: 7px 10px; font-size: 13.5px; cursor: pointer; color: var(--text-2); }
+.menu-btn:hover, .menu-btn[aria-expanded="true"] { background: var(--raise-2); color: var(--text); }
 .menu-btn b { font-weight: 500; color: var(--text); }
-.menu-btn svg { opacity: .6; }
-.menu { position: absolute; left: 0; bottom: calc(100% + 8px); width: 300px; z-index: 30; padding: 6px; border-radius: 14px; background: color-mix(in srgb, var(--surface) 92%, transparent);
-  backdrop-filter: saturate(180%) blur(24px); -webkit-backdrop-filter: saturate(180%) blur(24px); box-shadow: var(--menu-shadow); transform-origin: bottom left; animation: pop .14s ease-out; }
+.menu-btn canvas { width: 18px; height: 18px; }
+.menu { position: absolute; left: 0; bottom: calc(100% + 8px); width: 300px; z-index: 30; padding: 6px; border-radius: 14px; background: var(--menu);
+  backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px); box-shadow: var(--shadow), inset 0 0 0 1px var(--line-2); transform-origin: bottom left; animation: pop .16s var(--ease); }
 @keyframes pop { from { opacity: 0; transform: scale(.97) translateY(4px); } }
-.menu [role="option"] { display: grid; grid-template-columns: 18px 1fr; gap: 8px; padding: 8px 10px; border-radius: 9px; cursor: pointer; }
-.menu [role="option"].active { background: var(--accent); color: #fff; }
-.menu [role="option"].active small { color: rgba(255,255,255,0.8); }
+.menu [role="option"] { display: grid; grid-template-columns: 18px 1fr; gap: 8px; padding: 9px 10px; border-radius: 9px; cursor: pointer; }
+.menu [role="option"].active { background: var(--raise-2); box-shadow: inset 0 0 0 1px var(--line-2); }
 .menu [role="option"]:focus-visible { outline: none; }
 .menu [role="option"] svg { visibility: hidden; margin-top: 4px; }
 .menu [role="option"][aria-selected="true"] svg { visibility: visible; }
-.menu b { font-weight: 500; font-size: 14px; display: block; }
+.menu b { font-weight: 500; font-size: 14px; display: block; color: var(--text); }
 .menu small { font-size: 12.5px; color: var(--text-2); }
-.menu .head { font-size: 12px; color: var(--text-3); padding: 6px 10px 4px; }
 
-.ideas { max-width: 780px; margin: 34px auto 0; }
+.ideas { max-width: 820px; margin: 40px auto 0; }
 .ideas-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-.ideas-head span { font-size: 14px; color: var(--text-2); }
-.seg { display: inline-flex; background: var(--fill); border-radius: 9px; padding: 2px; }
-.seg button { border: 0; background: transparent; border-radius: 7px; padding: 4px 14px; font-size: 13px; cursor: pointer; color: var(--text); }
-.seg button[aria-pressed="true"] { background: var(--surface); box-shadow: 0 1px 3px rgba(0,0,0,0.12); font-weight: 500; }
-.idea-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.idea { min-width: 0; text-align: left; border: 0; background: var(--surface); border-radius: 12px; padding: 13px 16px; cursor: pointer; box-shadow: var(--shadow); }
-.idea:hover { background: var(--surface-2); }
-.idea b { display: block; font-weight: 500; font-size: 15px; }
-.idea span { display: block; color: var(--text-2); font-size: 13px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ideas-head span { font-size: 13.5px; color: var(--text-2); }
+.seg { position: relative; display: inline-flex; background: var(--raise); border-radius: 10px; padding: 3px; box-shadow: inset 0 0 0 1px var(--line); }
+.seg button { position: relative; z-index: 1; border: 0; background: transparent; border-radius: 7px; padding: 4px 13px; font-size: 13px; cursor: pointer; color: var(--text-2); transition: color .2s; }
+.seg button[aria-pressed="true"] { color: var(--text); }
+.seg .thumb-ind { position: absolute; top: 3px; bottom: 3px; border-radius: 7px; background: var(--panel); box-shadow: inset 0 0 0 1px var(--line-2); transition: left .3s var(--ease), width .3s var(--ease); }
+.idea-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.idea { min-width: 0; text-align: left; border: 0; background: var(--panel); border-radius: 14px; padding: 14px 16px; cursor: pointer; box-shadow: inset 0 0 0 1px var(--line); }
+.idea b { display: block; font-weight: 500; font-size: 14.5px; }
+.idea span { display: block; color: var(--text-3); font-size: 13px; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.recent { margin-top: 72px; }
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 24px 20px; }
-.tile { cursor: pointer; border: 0; background: transparent; padding: 0; text-align: left; }
-.thumb { aspect-ratio: 16/9; border-radius: 12px; overflow: hidden; background: #0E1014; position: relative; }
-.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .3s ease; }
+.section-head { display: flex; align-items: baseline; justify-content: space-between; margin: 88px 0 18px; }
+.section-head h2 { font-size: 22px; font-weight: 600; margin: 0; }
+.section-head a { font-size: 14px; color: var(--text-2); }
+.section-head a:hover { color: var(--text); }
+
+/* tiles carry their own padding so the hover surface wraps the thumbnail and the text evenly;
+   the negative margin keeps thumbnails flush with the page edge */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; align-items: start; margin: 0 -12px; }
+.tile { display: flex; flex-direction: column; cursor: pointer; border: 0; background: transparent; padding: 12px 12px 14px; text-align: left; border-radius: 18px; transition: background .25s; }
+.tile:hover { background: var(--panel); }
+.thumb { position: relative; aspect-ratio: 16/9; width: 100%; border-radius: 10px; overflow: hidden; background: #0E1014; box-shadow: inset 0 0 0 1px var(--line); }
+.thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .5s var(--ease); }
 .tile:hover .thumb img { transform: scale(1.03); }
-.thumb .ph { position: absolute; inset: 0; display: grid; place-items: center; color: #8E8E93; font-size: 13px; }
-.thumb .dur { position: absolute; right: 8px; bottom: 8px; background: rgba(0,0,0,0.6); color: #fff; font-size: 12px; padding: 2px 7px; border-radius: 6px; font-variant-numeric: tabular-nums; }
-.tile h3 { margin: 10px 2px 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.3; }
-.tile p { margin: 2px 2px 0; font-size: 13px; color: var(--text-2); }
-.empty-note { color: var(--text-2); font-size: 15px; }
+.thumb .ph { position: absolute; inset: 0; display: grid; place-items: center; color: #8A8A8A; font-size: 13px; }
+.thumb .dur { position: absolute; right: 8px; bottom: 8px; background: rgba(0,0,0,0.72); color: #fff; font: 12px var(--mono); padding: 2px 7px; border-radius: 6px; }
+.tile h3 { margin: 12px 2px 0; font-size: 15px; font-weight: 500; letter-spacing: -0.01em; line-height: 1.35; min-height: calc(1.35em * 2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.tile p { margin: 4px 2px 0; font-size: 13px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.empty-note { color: var(--text-2); font-size: 15px; padding: 0 12px; }
 
 /* ------------------------------------------------------------- progress */
-.job-head { padding: 40px 0 22px; display: flex; gap: 24px; align-items: flex-end; }
-.job-head h1 { font-size: 32px; line-height: 1.15; margin: 0; font-weight: 600; }
-.job-head p { margin: 6px 0 0; color: var(--text-2); max-width: 720px; font-size: 15px; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+.job-head { padding: 36px 0 20px; display: flex; gap: 24px; align-items: flex-end; }
+.job-head h1 { font-size: 30px; line-height: 1.15; margin: 0; font-weight: 600; }
+.job-head p { margin: 6px 0 0; color: var(--text-3); max-width: 720px; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .job-head .right { margin-left: auto; display: flex; align-items: center; gap: 14px; flex: none; }
-.clock { font-variant-numeric: tabular-nums; color: var(--text-2); font-size: 15px; }
+.clock { font: 14px var(--mono); color: var(--text-2); }
 
-.overall { padding: 20px 24px 18px; }
-.overall .row { display: flex; align-items: baseline; gap: 12px; }
-.overall .stage-name { font: 600 17px var(--display); letter-spacing: -0.01em; }
-.overall .pct { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--text-2); font-size: 15px; }
-.track { position: relative; height: 6px; border-radius: 3px; background: var(--fill-2); overflow: hidden; margin-top: 12px; }
-.track .fill { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 3px; background: var(--accent); transition: width .5s cubic-bezier(.2,.7,.2,1); }
-.track .fill::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.45), transparent); transform: translateX(-100%); animation: sheen 1.6s ease-in-out infinite; }
-.track.idle .fill::after { display: none; }
-@keyframes sheen { to { transform: translateX(100%); } }
-.ticks { display: grid; grid-template-columns: 3fr 15fr 30fr 5fr 47fr; margin-top: 8px; font-size: 12px; color: var(--text-3); }
-.ticks span.on { color: var(--text); }
+.stage-card { display: grid; grid-template-columns: 180px minmax(0, 1fr) 340px; gap: 28px; align-items: center; padding: 20px 24px 20px 14px; }
+.stage-card > canvas { width: 180px; height: 180px; }
+.stage-name { font-size: 26px; font-weight: 600; letter-spacing: -0.03em; }
+.stage-sub { margin-top: 6px; font-size: 14px; color: var(--text-2); min-height: 22px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prog { margin-top: 22px; }
+.prog .row { display: flex; justify-content: space-between; font: 12px var(--mono); color: var(--text-3); margin-bottom: 8px; }
+.prog .row b { color: var(--text); font-weight: 500; }
+.track { position: relative; height: 4px; border-radius: 2px; background: var(--raise-2); overflow: hidden; }
+.track .fill { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 2px; background: var(--primary); transition: width .6s var(--ease); overflow: hidden; }
+.track .fill::after { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 40%; background: linear-gradient(90deg, transparent, var(--glow), transparent); animation: sweep 1.8s var(--ease) infinite; }
+@keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(260%); } }
+.ticks { display: grid; grid-template-columns: minmax(46px, 3fr) minmax(46px, 15fr) 30fr minmax(54px, 5fr) 47fr; margin-top: 10px; font-size: 12px; color: var(--text-3); }
+.ticks span { border-left: 1px solid var(--line-2); padding-left: 8px; overflow: hidden; white-space: nowrap; }
+.ticks span.on { color: var(--text); border-color: var(--primary); }
 .ticks span.ok { color: var(--text-2); }
-.ticker { margin-top: 14px; font-size: 14px; color: var(--text-2); display: flex; gap: 8px; align-items: center; min-height: 21px; }
-.ticker .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex: none; animation: blink 1.2s ease-in-out infinite; }
-.ticker.warn .dot { background: var(--amber); } .ticker.err .dot { background: var(--red); animation: none; }
-@keyframes blink { 50% { opacity: .25; } }
-.ticker span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.graph-card { margin-top: 16px; padding: 22px 20px 16px; }
-.gscroll { overflow-x: auto; }
-#graph { display: block; width: 100%; min-width: 980px; }
-#graph text { font-family: var(--font); }
-#graph .edge { fill: none; stroke: var(--line-2); stroke-width: 1.5; }
-#graph .edge.done { stroke: color-mix(in srgb, var(--green) 55%, transparent); }
-#graph .edge.live { stroke: var(--accent-line); }
-#graph .edge.retry { stroke: var(--amber); stroke-dasharray: 5 5; }
-#graph .pulse { fill: var(--accent); }
-#graph .n > rect.box { fill: var(--surface-2); stroke: var(--line-2); stroke-width: 1; }
-#graph .n.running > rect.box { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
-#graph .n.done > rect.box { stroke: color-mix(in srgb, var(--green) 50%, transparent); }
-#graph .n.warn > rect.box { stroke: var(--amber); fill: var(--amber-soft); }
-#graph .n.failed > rect.box { stroke: var(--red); fill: var(--red-soft); }
-#graph .n.pending { opacity: .55; }
-#graph .n .t { font-size: 13px; font-weight: 600; fill: var(--text); }
-#graph .n .d { font-size: 11.5px; fill: var(--text-2); }
-#graph .n .ring { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 10 300; animation: orbit 1.4s linear infinite; }
-@keyframes orbit { to { stroke-dashoffset: -310; } }
-#graph .ic { fill: var(--fill-2); }
-#graph .n.done .ic { fill: var(--green); } #graph .n.running .ic { fill: var(--accent); } #graph .n.warn .ic { fill: var(--amber); } #graph .n.failed .ic { fill: var(--red); }
-#graph .glyph { fill: none; stroke: #fff; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-#graph .n.pending .glyph { stroke: var(--text-2); }
-#graph .chip rect { fill: var(--fill-2); }
-#graph .chip text { font-size: 10.5px; font-weight: 600; fill: var(--text-2); font-variant-numeric: tabular-nums; }
-#graph .chip.done rect { fill: var(--green); } #graph .chip.done text { fill: #fff; }
-#graph .chip.running rect { fill: var(--accent); } #graph .chip.running text { fill: #fff; }
-#graph .chip.warn rect { fill: var(--amber); } #graph .chip.warn text { fill: #fff; }
-#graph .chip.fallback rect { fill: var(--red); } #graph .chip.fallback text { fill: #fff; }
-#graph .badge rect { fill: var(--amber); } #graph .badge text { fill: #fff; font-size: 10.5px; font-weight: 600; }
-#graph .col { font-size: 11.5px; fill: var(--text-3); }
-#graph .ringbg { fill: none; stroke: var(--fill-2); stroke-width: 4; }
-#graph .ringfg { fill: none; stroke: var(--accent); stroke-width: 4; stroke-linecap: round; transition: stroke-dashoffset .4s; }
+/* agent activity: a feed of pills, newest at the top */
+.feed { align-self: stretch; border-left: 1px solid var(--line); padding-left: 22px; min-width: 0; }
+.feed h3 { margin: 4px 0 10px; font-size: 12.5px; font-weight: 500; color: var(--text-3); letter-spacing: 0; }
+.feed ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.feed li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; font-size: 13px; animation: rise .4s var(--ease); }
+@keyframes rise { from { opacity: 0; transform: translateY(-6px); } }
+.feed li .pill { height: 28px; font-size: 12.5px; padding-right: 12px; }
+.feed li .pill canvas { width: 20px; height: 20px; }
+.feed li .pill i { width: 20px; height: 20px; display: grid; place-items: center; color: var(--green); }
+.feed li.warn .pill i { color: var(--amber); }
+.feed li.error .pill i { color: var(--red); }
+.feed li .det { color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.feed li:first-child .det { color: var(--text-2); }
+.feed li time { font: 11.5px var(--mono); color: var(--text-3); }
+.feed .empty { font-size: 13px; color: var(--text-3); }
+
+.flow { margin-top: 16px; padding: 18px 18px 22px; }
+.flow-scroll { overflow-x: auto; scrollbar-width: thin; }
+.flow-canvas { position: relative; min-width: 1240px; }
+.flow-canvas svg.edges { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.edges .e { fill: none; stroke: var(--line-2); stroke-width: 1.5; transition: stroke .4s; }
+.edges .e.done, .edges .e.live { stroke: var(--line-3); }
+.edges .e.retry { stroke: var(--amber); opacity: .45; }
+/* a short bright segment travels along a live edge, like data moving between agents */
+.edges .comet { fill: none; stroke: var(--text); stroke-width: 2.2; stroke-linecap: round; stroke-dasharray: 14 86; animation: travel 1.5s cubic-bezier(.45,0,.4,1) infinite; filter: drop-shadow(0 0 3px var(--glow)); }
+.edges .comet.amber { stroke: var(--amber); }
+@keyframes travel { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
+.col-label { position: absolute; top: 0; font-size: 11.5px; color: var(--text-3); }
+.node { position: absolute; display: flex; align-items: center; gap: 10px; padding: 0 14px 0 8px; height: 46px; border-radius: 23px; background: var(--raise); box-shadow: inset 0 0 0 1px var(--line); transition: box-shadow .3s, opacity .3s; white-space: nowrap; }
+.node canvas { width: 30px; height: 30px; flex: none; }
+.node > span { min-width: 0; overflow: hidden; }
+.node b { display: block; font-size: 13px; font-weight: 500; line-height: 1.2; }
+.node small { display: block; font-size: 11.5px; color: var(--text-3); line-height: 1.3; overflow: hidden; text-overflow: ellipsis; }
+.node.pending { opacity: .55; }
+.node.warn { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--amber) 55%, transparent); }
+.node.failed { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--red) 60%, transparent); }
+/* running nodes get a light that circles their border */
+@property --spin { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+.node.running::after { content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1px; pointer-events: none;
+  background: conic-gradient(from var(--spin), transparent 0 62%, var(--text) 80%, transparent 96%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; animation: orbit 2.2s linear infinite; }
+@keyframes orbit { to { --spin: 360deg; } }
+.node.round { padding: 0; width: 46px; justify-content: center; }
+.node.round canvas { width: 34px; height: 34px; }
+.node .under { position: absolute; top: 52px; left: 50%; transform: translateX(-50%); font-size: 11.5px; color: var(--text-3); }
+.node.call { height: 62px; border-radius: 16px; align-items: flex-start; padding-top: 8px; }
+.node .dots { display: flex; gap: 4px; margin-top: 5px; }
+.node .dots i { display: grid; place-items: center; width: 18px; height: 14px; border-radius: 4px; font: normal 600 10px var(--mono); background: var(--raise-2); color: var(--text-3); }
+.node .dots i.done { background: color-mix(in srgb, var(--green) 16%, transparent); color: var(--green); }
+.node .dots i.running { background: var(--line-2); color: var(--text); }
+.node .dots i.warn { background: color-mix(in srgb, var(--amber) 16%, transparent); color: var(--amber); }
+.node .dots i.fallback, .node .dots i.failed { background: color-mix(in srgb, var(--red) 16%, transparent); color: var(--red); }
 
 details.log-wrap { margin-top: 14px; }
-details.log-wrap summary { list-style: none; cursor: pointer; font-size: 13px; color: var(--text-2); display: inline-flex; gap: 6px; align-items: center; padding: 4px 2px; }
+details.log-wrap summary { list-style: none; cursor: pointer; font-size: 13px; color: var(--text-3); display: inline-flex; gap: 6px; padding: 4px 2px; }
 details.log-wrap summary::-webkit-details-marker { display: none; }
 details.log-wrap summary:hover { color: var(--text); }
-.log { margin-top: 8px; max-height: 300px; overflow-y: auto; font: 12.5px/1.6 var(--mono); color: var(--text-2); padding: 14px 18px; }
-.log div { display: grid; grid-template-columns: 52px 1fr; gap: 10px; }
-.log time { color: var(--text-3); text-align: right; font-variant-numeric: tabular-nums; }
-.log .warn { color: var(--amber); } .log .error { color: var(--red); }
-.banner { margin-top: 16px; padding: 14px 18px; border-radius: 14px; background: var(--red-soft); color: var(--red); font-size: 15px; }
+.log { margin-top: 8px; max-height: 300px; overflow-y: auto; font: 12px/1.7 var(--mono); color: var(--text-2); padding: 14px 18px; }
+.log div { display: grid; grid-template-columns: 52px 1fr; gap: 12px; }
+.log time { color: var(--text-3); text-align: right; }
+.log .warn { color: var(--amber); } .log .error { color: var(--red); } .log .success { color: var(--text); }
+.banner { margin-top: 16px; padding: 14px 18px; border-radius: 12px; background: color-mix(in srgb, var(--red) 8%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--red) 35%, transparent); color: var(--red); font-size: 14px; }
 
 /* ---------------------------------------------------------------- watch */
-.stage { background: #000; padding: 28px 20px; }
-.stage video { width: 100%; max-width: calc((100vh - 200px) * 16 / 9); margin: 0 auto; aspect-ratio: 16/9; display: block; border-radius: 14px; background: #0E1014; }
-.watch { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 48px; padding-top: 34px; }
-.watch h1 { font-size: 34px; line-height: 1.15; margin: 0; font-weight: 600; }
-.watch .meta { color: var(--text-2); margin-top: 8px; font-size: 15px; }
-.watch .brief { margin-top: 22px; padding-top: 22px; border-top: 1px solid var(--line); color: var(--text-2); font-size: 15px; }
+.screen { padding: 28px 24px 0; }
+.screen video { width: 100%; max-width: min(1160px, calc((100vh - 190px) * 16 / 9)); margin: 0 auto; aspect-ratio: 16/9; display: block; border-radius: 14px; background: #000; box-shadow: 0 0 0 1px var(--line), var(--shadow); }
+.watch { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 56px; padding-top: 34px; }
+.watch h1 { font-size: 32px; line-height: 1.15; margin: 0; font-weight: 600; }
+.watch .meta { color: var(--text-3); margin-top: 8px; font-size: 14px; }
+.watch .brief { margin-top: 24px; padding-top: 22px; border-top: 1px solid var(--line); color: var(--text-2); font-size: 14.5px; }
 .watch .brief b { display: block; color: var(--text); font-weight: 500; margin-bottom: 4px; }
 .watch .acts { display: flex; gap: 10px; margin-top: 24px; flex-wrap: wrap; }
-.chapters h2 { font-size: 17px; font-weight: 600; margin: 0 0 8px; letter-spacing: -0.01em; }
+.chapters h2 { font-size: 15px; font-weight: 600; margin: 4px 0 10px; letter-spacing: -0.01em; }
 .chapters ol { list-style: none; padding: 0; margin: 0; }
-.chapters li button { width: 100%; display: grid; grid-template-columns: 48px 1fr; gap: 8px; text-align: left; border: 0; background: transparent; padding: 10px 10px; border-radius: 10px; cursor: pointer; font-size: 15px; }
-.chapters li button:hover { background: var(--fill); }
-.chapters li button[aria-current="true"] { background: var(--accent-soft); }
-.chapters li time { color: var(--text-2); font-variant-numeric: tabular-nums; }
+.chapters li button { width: 100%; display: grid; grid-template-columns: 52px 1fr; gap: 8px; text-align: left; border: 0; background: transparent; padding: 10px 12px; border-radius: 10px; cursor: pointer; font-size: 14px; color: var(--text-2); }
+.chapters li button:hover { color: var(--text); background: var(--raise); }
+.chapters li button[aria-current="true"] { color: var(--text); background: var(--raise); box-shadow: inset 0 0 0 1px var(--line); }
+.chapters li time { color: var(--text-3); font: 12.5px/1.9 var(--mono); }
 
+@media (max-width: 1080px) {
+  .stage-card { grid-template-columns: 160px minmax(0, 1fr); }
+  .stage-card > canvas { width: 160px; height: 160px; }
+  .feed { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--line); padding: 16px 0 0 10px; }
+}
 @media (max-width: 900px) {
   .watch { grid-template-columns: 1fr; }
   .idea-list { grid-template-columns: 1fr; }
-  .hero h1 { font-size: 36px; }
+  .hero h1 { font-size: 40px; }
+  .hero-orb { width: 290px; height: 290px; }
+  .settings { grid-template-columns: 1fr; }
+  .setting + .setting { border-left: 0; border-top: 1px solid var(--line); }
   .job-head { flex-direction: column; align-items: flex-start; }
   .job-head .right { margin-left: 0; }
-  .nav { display: none; }
-  .opts { grid-template-columns: 1fr; gap: 6px; }
-  .opts .lbl { margin-top: 6px; }
+  .stage-card { grid-template-columns: 1fr; justify-items: center; text-align: center; }
+  .feed { justify-self: stretch; text-align: left; padding-left: 0; }
+  .stage-card > div:nth-child(2) { width: 100%; }
   .ticks { display: none; }
+}
+@media (max-width: 560px) {
+  .nav { display: none; }
+  .bar .end .pill { display: none; }
+  .hero h1 { font-size: 34px; }
+  .hero-orb { width: 250px; height: 250px; margin-bottom: -22px; }
+  .composer .topic { font-size: 18px; padding: 20px 18px 4px; }
+  .composer textarea { padding: 8px 18px 16px; }
+  .setting { padding: 14px 16px 16px; }
 }
 </style>
 </head>
 <body>
 <header class="bar">
-  <a class="mark" href="#/" aria-label="ScriptMotion home">
-    <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><rect width="22" height="22" rx="6" fill="var(--text)"/><path d="M8 6.5v9l7.5-4.5z" fill="var(--bg)"/></svg>
-    ScriptMotion
-  </a>
+  <a class="mark" href="#/" aria-label="ScriptMotion home"><canvas class="orb" data-state="idle" data-dots="70" aria-hidden="true"></canvas>ScriptMotion</a>
   <nav class="nav">
     <a href="#/" data-nav="create">Create</a>
     <a href="#/library" data-nav="library">Library</a>
   </nav>
+  <div class="end">
+    <a class="pill" id="jobPill" hidden><canvas class="orb" data-state="work" data-dots="60" aria-hidden="true"></canvas><span class="shine" id="jobPillText">Working…</span></a>
+    <button class="icon-btn" id="themeBtn" type="button" aria-label="Switch between light and dark">
+      <svg class="i-sun" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="10" cy="10" r="3.6"/><path d="M10 1.8v2M10 16.2v2M1.8 10h2M16.2 10h2M4.2 4.2l1.4 1.4M14.4 14.4l1.4 1.4M4.2 15.8l1.4-1.4M14.4 5.6l1.4-1.4"/></svg>
+      <svg class="i-moon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M16.5 12.3A7 7 0 0 1 7.7 3.5a7 7 0 1 0 8.8 8.8z"/></svg>
+    </button>
+  </div>
 </header>
 
 <!-- ============================================================ create -->
 <main id="v-create" class="page">
   <section class="hero">
+    <canvas class="orb hero-orb" id="heroOrb" data-state="breathe" data-dots="720" data-scatter="1" data-r="0.3" aria-hidden="true"></canvas>
+    <span class="pill" id="heroPill"><canvas class="orb" id="heroPillOrb" data-state="idle" data-dots="60" aria-hidden="true"></canvas><span id="heroPillText">Ready when you are</span></span>
     <h1>Teach it in motion.</h1>
-    <p>Describe a lesson. Get an animated explainer built from <span id="libCount">46</span> accurate physics, chemistry and maths diagrams.</p>
+    <p>Describe a lesson. ScriptMotion plans it, animates <span id="libCount">46</span> accurate physics, chemistry and maths diagrams, and renders the video.</p>
   </section>
 
-  <form class="composer card" id="composer" autocomplete="off">
-    <input class="topic" id="topic" placeholder="Topic, e.g. Refraction through a glass slab" maxlength="200" aria-label="Topic">
-    <textarea id="brief" maxlength="1500" aria-label="What the video should show" placeholder="What should the video show? Mention the values to use and how the diagram should change."></textarea>
-    <div class="opts">
-      <span class="lbl" id="audLbl">For</span>
-      <div class="chips" role="radiogroup" aria-labelledby="audLbl" id="audience"></div>
-      <span class="lbl" id="lenLbl">Length</span>
-      <div class="chips" role="radiogroup" aria-labelledby="lenLbl" id="duration"></div>
+  <form class="composer card glare" id="composer" autocomplete="off">
+    <input class="topic" id="topic" placeholder="What should students understand?" maxlength="200" aria-label="Topic">
+    <textarea id="brief" maxlength="1500" aria-label="How the video should show it" placeholder="Describe how the diagram should move: the values to start with and what to change. For example, move the object from 30 cm to 6 cm."></textarea>
+    <div class="settings">
+      <div class="setting">
+        <div class="lbl"><span id="audLbl">Audience</span><span>Scroll to choose</span></div>
+        <div class="wheel"><ul role="listbox" id="audience" tabindex="0" aria-labelledby="audLbl"></ul><div class="rail"></div></div>
+      </div>
+      <div class="setting">
+        <div class="lbl"><span id="lenLbl">Length</span><span id="lenHint">About 5 diagrams</span></div>
+        <div class="meter" id="meter">
+          <div class="readout"><span id="lenValue">1:30</span><small>min</small></div>
+          <div class="ruler" id="ruler" role="slider" tabindex="0" aria-labelledby="lenLbl" aria-valuemin="30" aria-valuemax="300">
+            <div class="strip" id="strip"></div><div class="needle"></div>
+          </div>
+        </div>
+      </div>
     </div>
     <div class="foot">
       <div class="menu-wrap">
-        <button type="button" class="menu-btn" id="modelBtn" aria-haspopup="listbox" aria-expanded="false">Model <b id="modelName">Nemotron 3 Ultra</b>
+        <button type="button" class="menu-btn" id="modelBtn" aria-haspopup="listbox" aria-expanded="false"><canvas class="orb" data-state="idle" data-dots="60" aria-hidden="true"></canvas><b id="modelName">Nemotron 3 Ultra</b>
           <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 3.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <div class="menu" id="modelMenu" role="listbox" aria-label="Model" hidden></div>
       </div>
       <span class="spacer"></span>
       <span class="kbd" id="kbdHint">Ctrl ↵</span>
-      <button class="btn primary" id="go" type="submit">Create video</button>
+      <button class="btn primary" id="go" type="submit"><span id="goText">Create video</span></button>
     </div>
   </form>
   <div class="form-error" id="formError" role="alert"></div>
 
   <section class="ideas" aria-label="Examples">
     <div class="ideas-head"><span>Start from an example</span>
-      <div class="seg" role="group" id="subjectSeg">
+      <div class="seg" role="group" id="subjectSeg"><span class="thumb-ind"></span>
         <button type="button" data-s="physics" aria-pressed="true">Physics</button>
         <button type="button" data-s="chemistry" aria-pressed="false">Chemistry</button>
         <button type="button" data-s="maths" aria-pressed="false">Maths</button>
@@ -276,8 +398,8 @@ details.log-wrap summary:hover { color: var(--text); }
     <div class="idea-list" id="ideas"></div>
   </section>
 
-  <section class="recent">
-    <h2 class="section-title">Recent videos</h2>
+  <section>
+    <div class="section-head"><h2>Recent videos</h2><a href="#/library">View library</a></div>
     <div class="grid" id="recentGrid"></div>
   </section>
 </main>
@@ -285,33 +407,32 @@ details.log-wrap summary:hover { color: var(--text); }
 <!-- ========================================================== progress -->
 <main id="v-job" class="page" hidden>
   <div class="job-head">
-    <div>
-      <h1 id="jobTitle">Creating your lesson</h1>
-      <p id="jobBrief"></p>
-    </div>
-    <div class="right">
-      <span class="clock" id="clock">0:00</span>
-      <button class="btn plain" id="cancel">Cancel</button>
-    </div>
+    <div><h1 id="jobTitle">Creating your lesson</h1><p id="jobBrief"></p></div>
+    <div class="right"><span class="clock" id="clock">0:00</span><button class="btn ghost" id="cancel">Cancel</button></div>
   </div>
 
-  <section class="card overall" aria-live="polite">
-    <div class="row"><span class="stage-name" id="stageLabel">Starting</span><span class="pct" id="pct">0%</span></div>
-    <div class="track" id="track"><div class="fill" id="fill"></div></div>
-    <div class="ticks" id="ticks"><span>Start</span><span>Plan</span><span>Write scenes</span><span>Check</span><span>Render</span></div>
-    <div class="ticker" id="ticker"><span class="dot"></span><span id="tickText">Connecting to the pipeline</span></div>
+  <section class="card stage-card" aria-live="polite">
+    <canvas class="orb" id="stageOrb" data-state="connect" data-dots="520" aria-hidden="true"></canvas>
+    <div>
+      <div class="stage-name" id="stageLabel">Connecting</div>
+      <div class="stage-sub" id="tickText">Starting the pipeline</div>
+      <div class="prog">
+        <div class="row"><span id="stageStep">Step 1 of 5</span><b id="pct">0%</b></div>
+        <div class="track"><div class="fill" id="fill"></div></div>
+        <div class="ticks" id="ticks"><span>Start</span><span>Plan</span><span>Write scenes</span><span>Verify</span><span>Render</span></div>
+      </div>
+    </div>
+    <div class="feed"><h3>Agent activity</h3><ol id="feed"></ol></div>
   </section>
 
-  <section class="card graph-card">
-    <div class="gscroll"><svg id="graph" role="img" aria-label="Agent pipeline"></svg></div>
-  </section>
+  <section class="card flow"><div class="flow-scroll"><div class="flow-canvas" id="flow"></div></div></section>
   <div class="banner" id="jobError" hidden></div>
   <details class="log-wrap" id="logWrap"><summary>Show technical log</summary><div class="card log" id="log"></div></details>
 </main>
 
 <!-- ============================================================= watch -->
 <section id="v-watch" hidden>
-  <div class="stage"><video id="video" controls playsinline preload="metadata"></video></div>
+  <div class="screen"><video id="video" controls playsinline preload="metadata"></video></div>
   <div class="page">
     <div class="watch">
       <div>
@@ -319,8 +440,8 @@ details.log-wrap summary:hover { color: var(--text); }
         <div class="meta" id="wMeta"></div>
         <div class="acts">
           <a class="btn primary" id="wDownload" download>Download</a>
-          <a class="btn plain" id="wStory" target="_blank" rel="noopener">Storyboard</a>
-          <a class="btn plain" href="#/">Create another</a>
+          <a class="btn ghost" id="wStory" target="_blank" rel="noopener">Storyboard</a>
+          <a class="btn ghost" href="#/">Create another</a>
         </div>
         <div class="brief" id="wBrief"></div>
       </div>
@@ -331,11 +452,172 @@ details.log-wrap summary:hover { color: var(--text); }
 
 <!-- =========================================================== library -->
 <main id="v-library" class="page" hidden>
-  <section class="hero" style="text-align:left;padding:48px 0 28px"><h1 style="font-size:40px">Library</h1></section>
+  <div class="section-head" style="margin-top:44px"><h2 style="font-size:32px">Library</h2><span class="kbd" id="libTotal"></span></div>
   <div class="grid" id="libGrid"></div>
 </main>
 
 <script>
+/* ======================================================================
+   Orbs: dot-particle spheres drawn on canvas. All orbs share one clock, so
+   an orb that is re-created keeps its phase. Each state moves differently:
+   the sphere breathes, thinks, routes, swarms, scans, fills and settles.
+   An orb with data-scatter can be stirred by the pointer: dots near the
+   cursor are pushed and swirled away, then spring back into the sphere,
+   which itself never moves. A click bursts it.
+   ====================================================================== */
+const Orbs = (() => {
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const PHI = Math.PI * (3 - Math.sqrt(5));
+  const cache = {};
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  let ink = [236, 236, 236];
+  const readInk = () => { const v = getComputedStyle(document.documentElement).getPropertyValue("--orb").split(",").map(Number); if (v.length === 3 && v.every((x) => !isNaN(x))) ink = v; };
+  const shape = (kind, n) => {
+    const key = kind + n;
+    if (cache[key]) return cache[key];
+    const pts = [];
+    if (kind === "sphere") {
+      for (let i = 0; i < n; i++) { const y = 1 - (i / (n - 1)) * 2, r = Math.sqrt(1 - y * y), a = PHI * i; pts.push([Math.cos(a) * r, y, Math.sin(a) * r]); }
+    } else if (kind === "rings") {
+      const R = 9;
+      for (let k = 0; k < R; k++) {
+        const lat = -Math.PI / 2 + (k + 0.5) * Math.PI / R, y = Math.sin(lat), r = Math.cos(lat), m = Math.max(5, Math.round((n / R) * r * 1.5));
+        for (let j = 0; j < m; j++) { const a = (j / m) * Math.PI * 2; pts.push([Math.cos(a) * r, y, Math.sin(a) * r]); }
+      }
+    } else if (kind === "meridians") {
+      const M = 9, per = Math.max(6, Math.round(n / M));
+      for (let k = 0; k < M; k++) { const lon = (k / M) * Math.PI; for (let j = 0; j < per; j++) { const lat = -Math.PI / 2 + ((j + 0.5) / per) * Math.PI, r = Math.cos(lat); pts.push([Math.cos(lon) * r, Math.sin(lat), Math.sin(lon) * r]); } }
+    } else if (kind === "swarm") {
+      seed = 7 + n;
+      for (let i = 0; i < n; i++) pts.push({ r: 0.55 + rnd() * 0.45, inc: rnd() * Math.PI, node: rnd() * Math.PI * 2, ph: rnd() * Math.PI * 2, sp: 0.6 + rnd() * 1.2 });
+    }
+    return (cache[key] = pts);
+  };
+  const STATES = {
+    idle:    { kind: "sphere", spin: 0.18, tilt: 0.35, alpha: 0.6 },
+    breathe: { kind: "sphere", spin: 0.32, tilt: 0.42, alpha: 0.95, breathe: 0.03, wave: 0.07, sway: 0.25 },
+    listen:  { kind: "sphere", spin: 0.5, tilt: 0.3, alpha: 1, ripple: 0.08 },
+    connect: { kind: "rings", spin: 0.9, tilt: 0.5, alpha: 0.9, wobble: 0.35 },
+    think:   { kind: "meridians", spin: 0.7, tilt: 0.3, alpha: 0.95 },
+    route:   { kind: "rings", spin: 1.6, tilt: 0.25, alpha: 0.95, wobble: 0.5 },
+    work:    { kind: "swarm", alpha: 1 },
+    retry:   { kind: "sphere", spin: 1.2, tilt: 0.4, alpha: 1, jitter: 0.09, tint: "amber" },
+    verify:  { kind: "sphere", spin: 0.5, tilt: 0.25, alpha: 1, scan: true },
+    render:  { kind: "sphere", spin: 0.45, tilt: 0.3, alpha: 1, fill: true },
+    done:    { kind: "sphere", spin: 0.12, tilt: 0.35, alpha: 0.95, breathe: 0.02, tint: "green" },
+    failed:  { kind: "sphere", spin: 0.05, tilt: 0.35, alpha: 0.75, tint: "red" },
+  };
+  const TINT = { dark: { amber: [245, 165, 36], green: [69, 212, 131], red: [242, 92, 92] }, light: { amber: [184, 110, 0], green: [21, 145, 63], red: [212, 43, 43] } };
+  const orbs = new Set();
+  const mouse = { x: -1e4, y: -1e4, vx: 0, vy: 0, lx: -1e4, ly: -1e4 };
+  addEventListener("pointermove", (e) => { mouse.x = e.clientX; mouse.y = e.clientY; }, { passive: true });
+
+  function mount(cv) {
+    if (cv._orb) return cv._orb;
+    const o = { cv, ctx: cv.getContext("2d"), state: cv.dataset.state || "idle", prev: null, since: 0, progress: 0,
+      dots: +cv.dataset.dots || 160, scatter: !!cv.dataset.scatter, rf: +cv.dataset.r || 0.4, off: null, burst: 0 };
+    if (o.scatter) cv.addEventListener("pointerdown", () => { o.burst = 1; });
+    cv._orb = o; orbs.add(o); return o;
+  }
+  function set(cv, state, progress) {
+    if (!cv) return;
+    const o = mount(cv);
+    if (progress != null) o.progress = progress;
+    if (state && state !== o.state) { o.prev = o.state; o.state = state; o.since = performance.now(); }
+  }
+  function drawState(o, name, t, k, R, cx, cy, dpr, rect, physics) {
+    const S = STATES[name] || STATES.idle, ctx = o.ctx;
+    const n = S.kind === "swarm" ? Math.round(o.dots * 0.6) : o.dots;
+    const pts = shape(S.kind, n);
+    const col = S.tint ? TINT[document.documentElement.dataset.theme === "light" ? "light" : "dark"][S.tint] : ink;
+    const dot = Math.max(0.7, R / 75) * dpr;
+    const ay = t * (S.spin || 0), ax = (S.tilt || 0) + (S.wobble ? Math.sin(t * 0.8) * S.wobble : 0) + (S.sway ? Math.sin(t * 0.37) * S.sway : 0);
+    const cay = Math.cos(ay), say = Math.sin(ay), cax = Math.cos(ax), sax = Math.sin(ax);
+    const scale = 1 + (S.breathe ? Math.sin(t * 1.6) * S.breathe : 0) + (S.jitter ? Math.sin(t * 9) * S.jitter * 0.5 : 0);
+    const scanY = Math.sin(t * 1.7) * 0.9, fillY = 1 - 2 * o.progress;
+    // pointer in canvas pixels, for the scatter physics
+    let off = null, mx = 0, my = 0, reach = 0, mvx = 0, mvy = 0;
+    if (physics) {
+      if (!o.off || o.off.length !== pts.length * 4) o.off = new Float32Array(pts.length * 4);
+      off = o.off; mx = (mouse.x - rect.left) * dpr; my = (mouse.y - rect.top) * dpr; reach = R * 0.62; mvx = mouse.vx * dpr; mvy = mouse.vy * dpr;
+    }
+    ctx.fillStyle = `rgb(${col[0]},${col[1]},${col[2]})`;
+    for (let i = 0; i < pts.length; i++) {
+      let x, y, z;
+      if (S.kind === "swarm") {
+        const p = pts[i], a = p.ph + t * p.sp, r = p.r * (0.92 + 0.08 * Math.sin(t * 2 + p.ph));
+        const ox = Math.cos(a) * r, oy = Math.sin(a) * r;
+        const ci = Math.cos(p.inc), si = Math.sin(p.inc), cn = Math.cos(p.node + t * 0.2), sn = Math.sin(p.node + t * 0.2);
+        const y1 = oy * ci, z1 = oy * si; x = ox * cn - z1 * sn; z = ox * sn + z1 * cn; y = y1;
+      } else {
+        const p = pts[i];
+        let px = p[0], py = p[1], pz = p[2];
+        if (S.ripple) { const m = 1 + S.ripple * Math.sin(t * 5 - py * 5); px *= m; py *= m; pz *= m; }
+        if (S.wave) { const m = 1 + S.wave * Math.sin(py * 3 + t * 1.3) * Math.cos(Math.atan2(pz, px) * 2 - t * 0.9); px *= m; py *= m; pz *= m; }
+        const x1 = px * cay + pz * say, z1 = -px * say + pz * cay;
+        y = py * cax - z1 * sax; z = py * sax + z1 * cax; x = x1;
+      }
+      const depth = (z + 1) / 2;
+      let a = (0.12 + 0.88 * depth * depth) * (S.alpha || 1) * k;
+      if (S.scan) { const d = Math.abs(y - scanY); a *= d < 0.14 ? 1.6 : 0.4; }
+      if (S.fill) { a *= y > fillY ? 1.15 : 0.26; }
+      let sx = cx + x * scale * R, sy = cy + y * scale * R;
+      if (off) {
+        const j = i * 4;
+        let ox = off[j], oy = off[j + 1], vx = off[j + 2], vy = off[j + 3];
+        const dx = sx + ox - mx, dy = sy + oy - my, d = Math.hypot(dx, dy) || 1;
+        if (d < reach) {
+          const f = (1 - d / reach) ** 2 * (0.4 + 0.6 * depth);
+          vx += (dx / d) * f * 2.6 * dpr - (dy / d) * f * 1.8 * dpr + mvx * f * 0.25;
+          vy += (dy / d) * f * 2.6 * dpr + (dx / d) * f * 1.8 * dpr + mvy * f * 0.25;
+        }
+        if (o.burst) { const ang = (i * 2.399) % 6.283, s = (2 + (i % 7)) * dpr * o.burst; vx += Math.cos(ang) * s; vy += Math.sin(ang) * s; }
+        vx += -ox * 0.045; vy += -oy * 0.045; vx *= 0.9; vy *= 0.9; ox += vx; oy += vy;
+        off[j] = ox; off[j + 1] = oy; off[j + 2] = vx; off[j + 3] = vy;
+        sx += ox; sy += oy;
+        a *= 1 + Math.min(0.6, Math.hypot(vx, vy) / (6 * dpr));
+      }
+      ctx.globalAlpha = Math.min(1, a);
+      const s = dot * (0.55 + 0.75 * depth);
+      ctx.beginPath(); ctx.arc(sx, sy, s, 0, 6.2832); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+  function frame(now) {
+    const t = reduce ? 1.2 : now / 1000;
+    const dpr = Math.min(2, devicePixelRatio || 1);
+    mouse.vx = mouse.lx > -1e3 ? mouse.x - mouse.lx : 0; mouse.vy = mouse.ly > -1e3 ? mouse.y - mouse.ly : 0; mouse.lx = mouse.x; mouse.ly = mouse.y;
+    for (const o of orbs) {
+      if (!o.cv.isConnected) { orbs.delete(o); continue; }
+      if (!o.cv.offsetParent) continue;
+      const rect = o.cv.getBoundingClientRect();
+      if (rect.bottom < 0 || rect.top > innerHeight) continue;
+      const w = Math.round(rect.width * dpr), h = Math.round(rect.height * dpr);
+      if (o.cv.width !== w || o.cv.height !== h) { o.cv.width = w; o.cv.height = h; }
+      o.ctx.clearRect(0, 0, w, h);
+      const R = Math.min(w, h) * o.rf, cx = w / 2, cy = h / 2;
+      const k = o.prev ? Math.min(1, (now - o.since) / 450) : 1;
+      if (o.prev && k < 1) drawState(o, o.prev, t, 1 - k, R, cx, cy, dpr, rect, false); else o.prev = null;
+      drawState(o, o.state, t, k, R, cx, cy, dpr, rect, o.scatter && !reduce);
+      o.burst = 0;
+    }
+    if (!reduce) requestAnimationFrame(frame);
+  }
+  function scan(root = document) { root.querySelectorAll("canvas.orb").forEach(mount); }
+  readInk();
+  requestAnimationFrame(frame);
+  if (reduce) setInterval(() => frame(performance.now()), 500);
+  return { mount, set, scan, readInk };
+})();
+
+// glare: every .glare surface tracks the pointer
+document.addEventListener("pointermove", (e) => {
+  const g = e.target.closest && e.target.closest(".glare"); if (!g) return;
+  const r = g.getBoundingClientRect();
+  g.style.setProperty("--mx", `${e.clientX - r.left}px`); g.style.setProperty("--my", `${e.clientY - r.top}px`);
+}, { passive: true });
+
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : "");
@@ -347,37 +629,109 @@ async function api(path, opts = {}) {
   return d;
 }
 $("#kbdHint").textContent = /Mac/.test(navigator.platform) ? "⌘ ↵" : "Ctrl ↵";
+Orbs.scan();
 
-// ============================================================== options
-const AUDIENCES = [["Class 8", "Class 8 student"], ["Class 9", "Class 9 student"], ["Class 10", "Class 10 student"], ["Class 11", "Class 11 student"], ["Class 12", "Class 12 student"], ["College", "College student"]];
-const LENGTHS = [["1 min", 60], ["1½ min", 90], ["2½ min", 150], ["4 min", 240]];
+// theme
+$("#themeBtn").onclick = () => {
+  const t = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+  document.documentElement.dataset.theme = t;
+  try { localStorage.setItem("sm-theme", t); } catch (_) {}
+  Orbs.readInk();
+};
+
 const form = { audience: "Class 10 student", duration: 90, model: "" };
-function radios(el, items, key) {
-  el.innerHTML = items.map(([label, value]) => `<button type="button" class="chip" role="radio" data-v="${esc(value)}" aria-checked="${String(value) === String(form[key])}" tabindex="${String(value) === String(form[key]) ? 0 : -1}">${esc(label)}</button>`).join("");
-  el.onclick = (e) => { const b = e.target.closest(".chip"); if (b) pick(b); };
-  el.onkeydown = (e) => {
-    if (!["ArrowRight", "ArrowLeft"].includes(e.key)) return;
-    const bs = [...el.children], i = bs.findIndex((b) => b.getAttribute("aria-checked") === "true");
-    const n = bs[(i + (e.key === "ArrowRight" ? 1 : bs.length - 1)) % bs.length]; pick(n); n.focus(); e.preventDefault();
-  };
-  function pick(b) {
-    form[key] = typeof form[key] === "number" ? +b.dataset.v : b.dataset.v;
-    [...el.children].forEach((x) => { x.setAttribute("aria-checked", x === b); x.tabIndex = x === b ? 0 : -1; });
-  }
-}
-radios($("#audience"), AUDIENCES, "audience");
-radios($("#duration"), LENGTHS, "duration");
 
+// hero pill: says what the orb is doing
+function heroState(state, text) {
+  Orbs.set($("#heroOrb"), state); Orbs.set($("#heroPillOrb"), state === "breathe" ? "idle" : state);
+  $("#heroPillText").textContent = text; $("#heroPillText").className = state === "breathe" ? "" : "shine";
+}
+
+// ============================================================ audience wheel
+const AUDIENCES = [
+  ["Class 8", "Class 8 student", "Middle school"], ["Class 9", "Class 9 student", "Secondary"], ["Class 10", "Class 10 student", "Board exams"],
+  ["Class 11", "Class 11 student", "Senior secondary"], ["Class 12", "Class 12 student", "Board exams"],
+  ["JEE / NEET", "JEE or NEET aspirant", "Entrance prep"], ["College", "College student", "Undergraduate"],
+];
+(function wheel() {
+  const ul = $("#audience"), H = 40;
+  ul.innerHTML = AUDIENCES.map(([l, v, s], i) => `<li role="option" id="aud-${i}" data-i="${i}" aria-selected="false"><span>${esc(l)}</span><small>${esc(s)}</small></li>`).join("");
+  const items = [...ul.children];
+  let cur = AUDIENCES.findIndex((a) => a[1] === form.audience), timer = 0;
+  const select = (i) => {
+    cur = Math.max(0, Math.min(items.length - 1, i)); form.audience = AUDIENCES[cur][1];
+    items.forEach((li, j) => li.setAttribute("aria-selected", j === cur)); ul.setAttribute("aria-activedescendant", `aud-${cur}`);
+  };
+  const go = (i, smooth = true) => { select(i); ul.scrollTo({ top: cur * H, behavior: smooth ? "smooth" : "auto" }); };
+  ul.addEventListener("scroll", () => { clearTimeout(timer); select(Math.round(ul.scrollTop / H)); timer = setTimeout(() => go(Math.round(ul.scrollTop / H)), 120); }, { passive: true });
+  ul.addEventListener("click", (e) => { const li = e.target.closest("li"); if (li) go(+li.dataset.i); });
+  ul.addEventListener("keydown", (e) => { if (e.key === "ArrowDown") { go(cur + 1); e.preventDefault(); } if (e.key === "ArrowUp") { go(cur - 1); e.preventDefault(); } });
+  requestAnimationFrame(() => go(cur, false));
+})();
+
+// =============================================================== length meter
+// The server accepts 30 s to 5 min. The ruler has hard stops there and springs back if dragged past.
+(function meter() {
+  const MIN = 30, MAX = 300, STEP = 15, PX = 28;
+  const ruler = $("#ruler"), strip = $("#strip"), box = $("#meter");
+  const steps = (MAX - MIN) / STEP, span = steps * PX;
+  strip.style.width = span + "px";
+  strip.innerHTML = `<i class="base" style="width:${span}px"></i><i class="fillbar" id="fillbar"></i>` +
+    Array.from({ length: steps - 1 }, (_, k) => {
+      const i = k + 1, s = MIN + i * STEP, major = s % 60 === 0;
+      return `<i class="tick ${major ? "major" : ""}" style="left:${i * PX}px">${major ? `<span>${s / 60}m</span>` : ""}</i>`;
+    }).join("") +
+    `<i class="stop" style="left:0"><span>30s</span></i><i class="stop" style="left:${span}px"><span>5m</span></i>`;
+  let val = form.duration, drag = null, flash = 0;
+  const pos = (v) => ruler.clientWidth / 2 - ((v - MIN) / STEP) * PX;
+  const paint = (v, settle) => {
+    strip.classList.toggle("settle", !!settle);
+    strip.style.transform = `translateX(${pos(v)}px)`;
+    $("#fillbar").style.width = Math.max(0, ((Math.min(MAX, v) - MIN) / STEP) * PX) + "px";
+    const s = Math.max(MIN, Math.min(MAX, Math.round(v / STEP) * STEP));
+    $("#lenValue").textContent = mmss(s);
+    if (!flash) $("#lenHint").textContent = `About ${Math.max(2, Math.round(s / 20))} diagrams`;
+    ruler.setAttribute("aria-valuenow", s); ruler.setAttribute("aria-valuetext", `${mmss(s)} minutes`);
+  };
+  const limit = (msg) => {
+    box.classList.add("limit"); $("#lenHint").textContent = msg;
+    clearTimeout(flash); flash = setTimeout(() => { flash = 0; box.classList.remove("limit"); paint(val, false); }, 1600);
+  };
+  const commit = (v) => {
+    if (v > MAX) limit("5 minutes is the longest video"); else if (v < MIN) limit("30 seconds is the shortest video");
+    val = Math.max(MIN, Math.min(MAX, Math.round(v / STEP) * STEP)); form.duration = val; paint(val, true);
+  };
+  // past a stop the ruler moves at a fifth of the drag, at most one step
+  const rubber = (v) => v > MAX ? MAX + Math.min(STEP, (v - MAX) * 0.2) : v < MIN ? MIN - Math.min(STEP, (MIN - v) * 0.2) : v;
+  ruler.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, v: val, raw: val }; ruler.setPointerCapture(e.pointerId); });
+  ruler.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    drag.raw = drag.v - ((e.clientX - drag.x) / PX) * STEP;
+    paint(rubber(drag.raw), false);
+  });
+  const end = () => { if (drag) { const raw = drag.raw; drag = null; commit(raw); } };
+  ruler.addEventListener("pointerup", end); ruler.addEventListener("pointercancel", end);
+  ruler.addEventListener("wheel", (e) => { e.preventDefault(); commit(val + Math.sign(Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY) * STEP); }, { passive: false });
+  ruler.addEventListener("keydown", (e) => {
+    const d = { ArrowRight: STEP, ArrowUp: STEP, ArrowLeft: -STEP, ArrowDown: -STEP, PageUp: 60, PageDown: -60 }[e.key];
+    if (d) { commit(val + d); e.preventDefault(); }
+    if (e.key === "Home") commit(MIN); if (e.key === "End") commit(MAX);
+  });
+  new ResizeObserver(() => paint(val, false)).observe(ruler);
+  commit(val);
+})();
+
+// ================================================================ model menu
 let models = [];
 const check = `<svg width="12" height="12" viewBox="0 0 12 12"><path d="M2.5 6.2l2.3 2.3 4.7-5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 function renderModels() {
   const m = models.find((x) => x.id === form.model) || models[0];
   if (m) { form.model = m.id; $("#modelName").textContent = m.label; }
-  $("#modelMenu").innerHTML = `<div class="head">Model</div>` + models.map((x) => `<div role="option" tabindex="-1" data-id="${esc(x.id)}" aria-selected="${x.id === form.model}">${check}<span><b>${esc(x.label)}</b><small>${esc(x.note || "")}</small></span></div>`).join("");
+  $("#modelMenu").innerHTML = models.map((x) => `<div role="option" tabindex="-1" data-id="${esc(x.id)}" aria-selected="${x.id === form.model}">${check}<span><b>${esc(x.label)}</b><small>${esc(x.note || "")}</small></span></div>`).join("");
 }
 function menu(open) {
   const m = $("#modelMenu"); m.hidden = !open; $("#modelBtn").setAttribute("aria-expanded", open);
-  if (open) { const sel = m.querySelector('[aria-selected="true"]') || m.querySelector('[role="option"]'); sel && (sel.classList.add("active"), sel.focus()); }
+  if (open) { const sel = m.querySelector('[aria-selected="true"]') || m.querySelector('[role="option"]'); if (sel) { sel.classList.add("active"); sel.focus(); } }
 }
 $("#modelBtn").onclick = (e) => { e.stopPropagation(); menu($("#modelMenu").hidden); };
 $("#modelMenu").onclick = (e) => { const o = e.target.closest('[role="option"]'); if (!o) return; form.model = o.dataset.id; renderModels(); menu(false); $("#modelBtn").focus(); };
@@ -391,12 +745,17 @@ $("#modelMenu").onkeydown = (e) => {
 };
 $("#modelMenu").onmousemove = (e) => {
   const o = e.target.closest('[role="option"]'); if (!o || o.classList.contains("active")) return;
-  $("#modelMenu").querySelectorAll(".active").forEach((x) => x.classList.remove("active"));
-  o.classList.add("active"); o.focus();
+  $("#modelMenu").querySelectorAll(".active").forEach((x) => x.classList.remove("active")); o.classList.add("active"); o.focus();
 };
 document.addEventListener("click", (e) => { if (!e.target.closest(".menu-wrap")) menu(false); });
 
-// ================================================================ ideas
+// the hero orb listens while you type
+let typing = 0;
+["topic", "brief"].forEach((id) => $("#" + id).addEventListener("input", () => {
+  heroState("listen", "Listening…"); clearTimeout(typing); typing = setTimeout(() => heroState("breathe", "Ready when you are"), 1400);
+}));
+
+// ===================================================================== ideas
 const IDEAS = {
   physics: [
     ["Convex lens images", "Image formation by a convex lens", "f = 10 cm. Start with the object at 30 cm, then move it to 15 cm, then inside F at 6 cm, so the image is seen to grow, flip and turn virtual."],
@@ -420,8 +779,10 @@ const IDEAS = {
   ],
 };
 function renderIdeas(subject) {
-  $("#ideas").innerHTML = IDEAS[subject].map((x, i) => `<button type="button" class="idea" data-i="${i}" data-s="${subject}"><b>${esc(x[0])}</b><span>${esc(x[2])}</span></button>`).join("");
+  $("#ideas").innerHTML = IDEAS[subject].map((x, i) => `<button type="button" class="idea glare" data-i="${i}" data-s="${subject}"><b>${esc(x[0])}</b><span>${esc(x[2])}</span></button>`).join("");
   document.querySelectorAll("#subjectSeg button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.s === subject));
+  const b = document.querySelector(`#subjectSeg button[data-s="${subject}"]`), ind = $("#subjectSeg .thumb-ind");
+  ind.style.left = b.offsetLeft + "px"; ind.style.width = b.offsetWidth + "px";
 }
 $("#subjectSeg").onclick = (e) => { const b = e.target.closest("button"); if (b) renderIdeas(b.dataset.s); };
 $("#ideas").onclick = (e) => {
@@ -430,29 +791,29 @@ $("#ideas").onclick = (e) => {
   $("#topic").value = x[1]; $("#brief").value = x[2]; $("#topic").focus();
   window.scrollTo({ top: 0, behavior: "smooth" });
 };
-renderIdeas("physics");
 
-// ============================================================== library
+// =================================================================== library
 let library = [];
-const tile = (h) => `<button class="tile" data-id="${esc(h.id)}">
+const tile = (h) => `<button class="tile glare" data-id="${esc(h.id)}">
   <div class="thumb">${h.poster ? `<img src="${h.poster}" alt="" loading="lazy">` : `<div class="ph">${h.video ? "No preview" : "Not rendered"}</div>`}
-  ${h.seconds ? `<span class="dur">${mmss(h.seconds)}</span>` : ""}</div>
-  <h3>${esc(h.title || h.topic)}</h3><p>${esc([cap(h.subject), h.chapter].filter(Boolean).join(", "))}</p></button>`;
+  ${h.video && h.seconds ? `<span class="dur">${mmss(h.seconds)}</span>` : ""}</div>
+  <h3>${esc(h.title || h.topic)}</h3><p>${esc([cap(h.subject), h.chapter].filter(Boolean).join(", ") || " ")}</p></button>`;
 async function loadLibrary() {
   library = await api("/api/history").catch(() => []);
   const rendered = library.filter((h) => h.video);
-  $("#recentGrid").innerHTML = rendered.slice(0, 6).map(tile).join("") || '<p class="empty-note">Videos you create appear here.</p>';
+  $("#recentGrid").innerHTML = rendered.slice(0, 4).map(tile).join("") || '<p class="empty-note">Videos you create appear here.</p>';
   $("#libGrid").innerHTML = library.map(tile).join("") || '<p class="empty-note">No videos yet. <a href="#/">Create your first lesson.</a></p>';
+  $("#libTotal").textContent = library.length ? `${library.length} video${library.length > 1 ? "s" : ""}` : "";
 }
 document.addEventListener("click", (e) => { const t = e.target.closest(".tile"); if (t) location.hash = `#/watch/${encodeURIComponent(t.dataset.id)}`; });
 
-// ================================================================ watch
+// ===================================================================== watch
 async function showWatch(id) {
   if (!library.length) await loadLibrary();
   const h = library.find((x) => x.id === id);
   if (!h) { $("#wTitle").textContent = "Video not found"; return; }
   const v = $("#video");
-  if (h.video && !v.src.endsWith(h.video)) { v.src = h.video; v.poster = h.poster || ""; }
+  if (h.video && !v.src.endsWith(h.video)) { v.poster = h.poster || ""; v.src = h.video; }
   $("#wTitle").textContent = h.title || h.topic;
   $("#wMeta").textContent = [cap(h.subject), h.chapter, h.level, h.seconds ? mmss(h.seconds) : ""].filter(Boolean).join(", ");
   $("#wDownload").href = h.video || "#"; $("#wDownload").hidden = !h.video;
@@ -467,19 +828,17 @@ $("#video").ontimeupdate = () => {
   document.querySelectorAll("#wChapters button").forEach((b) => b.setAttribute("aria-current", b === cur));
 };
 
-// ================================================================== job
+// ======================================================================= job
 let job = null, es = null, nodes = {}, scenes = [], calls = {}, callOrder = [], logs = [], t0 = 0, maxT = 0, clockTimer = null;
-let renderP = 0, bundleP = 0, lastSig = "";
+let renderP = 0, bundleP = 0, lastSig = "", feed = [];
 function resetJob() {
-  nodes = {}; scenes = []; calls = {}; callOrder = []; logs = []; renderP = 0; bundleP = 0; maxT = 0; lastSig = "";
-  $("#log").innerHTML = ""; $("#jobError").hidden = true; $("#track").classList.remove("idle");
-  setTicker("Connecting to the pipeline"); update();
+  nodes = {}; scenes = []; calls = {}; callOrder = []; logs = []; feed = []; renderP = 0; bundleP = 0; maxT = 0; lastSig = "";
+  $("#log").innerHTML = ""; $("#jobError").hidden = true; setTicker("Starting the pipeline"); renderFeed(); update();
 }
 const st = (id) => (nodes[id] || {}).status || "pending";
 const sceneDone = () => scenes.filter((_, i) => ["done", "fallback"].includes(st(`scene-${i}`))).length;
 
 function overall() {
-  // weights match the tick row: start 3, plan 15, write 30, check 5, render 47
   let p = 0;
   if (st("keys") === "done") p += 3; else if (st("keys") === "running") p += 1.5;
   if (st("outline") === "done") p += 15; else if (st("outline") === "running") p += 15 * Math.min(0.9, (Date.now() - (nodes.outline?._at || Date.now())) / 45000);
@@ -490,160 +849,166 @@ function overall() {
   if (st("done") === "done") p = 100;
   return Math.min(100, p);
 }
-function stageText() {
-  if (st("done") === "done") return "Done";
-  if (st("render") === "running") return renderP > 0 ? "Rendering frames" : "Preparing the renderer";
-  if (st("validate") === "running") return "Checking formulas and timing";
-  if (st("repair") === "running") return "Retrying scenes that failed checks";
-  if (scenes.length && st("outline") === "done") return `Writing ${scenes.length} scenes in parallel`;
-  if (st("outline") === "running") return "Planning the lesson";
-  if (st("keys") === "running") return "Starting workers";
-  return "Starting";
+// [title, orb state, step index, short verb for pills]
+function stage() {
+  if (st("done") === "done") return ["Your video is ready", "done", 4, "Done"];
+  if (job && job.failed) return ["Stopped", "failed", 4, "Stopped"];
+  if (st("render") === "running") return [renderP > 0 ? "Rendering frames" : "Preparing the renderer", "render", 4, "Rendering"];
+  if (st("validate") === "running" || st("assemble") === "running") return ["Verifying formulas and timing", "verify", 3, "Verifying"];
+  if (st("repair") === "running") return ["Retrying scenes that failed checks", "retry", 2, "Retrying"];
+  if (scenes.length && st("outline") === "done") return [`Writing ${scenes.length} scenes in parallel`, "work", 2, "Writing"];
+  if (st("outline") === "running") return ["Planning the lesson", "think", 1, "Planning"];
+  return ["Connecting", "connect", 0, "Connecting"];
 }
-function setTicker(text, level) {
-  $("#tickText").textContent = text;
-  $("#ticker").className = "ticker" + (level === "warn" ? " warn" : level === "error" ? " err" : "");
-}
+function setTicker(text, level) { $("#tickText").textContent = text; $("#tickText").style.color = level === "warn" ? "var(--amber)" : level === "error" ? "var(--red)" : ""; }
 function update() {
-  const p = overall();
+  const p = overall(), [name, orb, idx, verb] = stage();
   $("#fill").style.width = p.toFixed(1) + "%";
   $("#pct").textContent = Math.floor(p) + "%";
-  $("#stageLabel").textContent = stageText();
-  const idx = st("render") !== "pending" ? 4 : st("validate") !== "pending" ? 3 : scenes.length ? 2 : st("outline") !== "pending" ? 1 : 0;
+  $("#stageLabel").textContent = name;
+  $("#stageStep").textContent = `Step ${idx + 1} of 5`;
+  Orbs.set($("#stageOrb"), orb, orb === "render" ? renderP : null);
   [...$("#ticks").children].forEach((s, i) => (s.className = i < idx ? "ok" : i === idx ? "on" : ""));
-  drawGraph();
+  // the bar pill follows a running job from any other page
+  const live = !!job && !job.failed && st("done") !== "done";
+  $("#jobPill").hidden = !live || !$("#v-job").hidden;
+  if (live) { $("#jobPill").href = `#/job/${job.id}`; $("#jobPillText").textContent = `${verb}… ${Math.floor(p)}%`; Orbs.set($("#jobPill canvas"), orb, renderP); }
+  drawFlow();
 }
 
-// ---------------------------------------------------------------- graph
-const GLYPH = {
-  brief: "M-4,-4h8M-4,0h8M-4,4h5",
-  plan: "M-4.5,-3.5h9v7h-9zM-1.5,-3.5v7",
-  route: "M-5,0h3M-2,0l4,-4h3M-2,0l4,4h3",
-  call: "M-4,-2.5a4,4 0 0 1 8,0v1a4,4 0 0 1-8,0zM-2,4.5h4",
-  merge: "M-5,-4l4,4l-4,4M1,0h4",
-  check: "M-4,0.5l2.5,2.5l5.5,-6",
-  render: "M-3,-4.5v9l7,-4.5z",
-  video: "M-4.5,-3.5h9v7h-9zM-1,-1.6v3.2l2.6,-1.6z",
-  retry: "M3.8,-1.6a4.2,4.2 0 1 0 0.4,3M4,-4.5v3h-3",
+// --------------------------------------------------------------- agent feed
+// each pipeline stage acts as an agent; consecutive messages from one agent update its row
+const AGENTS = {
+  outline: ["think", "Planning"], scenes: ["work", "Writing"], repair: ["retry", "Retrying"], validate: ["verify", "Verifying"],
+  bundle: ["route", "Bundling"], render: ["render", "Rendering"], done: ["done", "Finished"], error: ["failed", "Failed"],
 };
-function drawGraph() {
-  const svg = $("#graph");
-  const W = Math.max(980, svg.clientWidth || 1000);
-  const callIds = callOrder.length ? callOrder : [];
-  const rowH = 66, nh = 52;
-  const callsH = Math.max(1, callIds.length) * rowH;
-  const H = Math.max(260, callsH + 70), cy = 36 + (H - 36) / 2;
-  const cols = { brief: 0, plan: 0.13, route: 0.27, calls: 0.37, merge: 0.6, check: 0.715, render: 0.825, video: 0.975 };
-  const X = (k) => 4 + cols[k] * (W - 8);
-  const sw = 118, cw = Math.min(250, W * 0.22);
-  const box = (k, w = sw) => ({ x: X(k), y: cy - nh / 2, w, h: nh });
-  const B = { brief: box("brief"), plan: box("plan"), merge: box("merge", 104), check: box("check", 104), render: box("render", 112) };
-  B.route = { x: X("route"), y: cy - 20, w: 40, h: 40 };
-  B.video = { x: X("video") - 20, y: cy - 20, w: 40, h: 40 };
-  const top = cy - callsH / 2;
-  const callBox = (i) => ({ x: X("calls"), y: top + i * rowH + (rowH - nh - 6) / 2, w: cw, h: nh + 6 });
+const ICON = {
+  ok: '<svg width="12" height="12" viewBox="0 0 12 12"><path d="M2.5 6.2l2.3 2.3 4.7-5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  warn: '<svg width="12" height="12" viewBox="0 0 12 12"><path d="M6 2.5v4M6 9h.01" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+};
+function feedPush(stg, text, level, t) {
+  if (!AGENTS[stg]) return;
+  const top = feed[0];
+  if (top && top.stage === stg) { top.text = text; if (level === "warn" || level === "error") top.level = level; if (t != null) top.t = t; }
+  else feed.unshift({ stage: stg, text, level, t });
+  feed = feed.slice(0, 5);
+  renderFeed();
+}
+function renderFeed() {
+  const finished = st("done") === "done" || (job && job.failed);
+  if (!feed.length) { $("#feed").innerHTML = `<li class="empty">Waiting for the first agent</li>`; return; }
+  $("#feed").innerHTML = feed.map((f, i) => {
+    const [orb, verb] = AGENTS[f.stage], live = i === 0 && !finished && f.stage !== "done" && f.stage !== "error";
+    const mark = live ? `<canvas class="orb" data-state="${orb}" data-dots="60"></canvas>` : `<i>${f.level === "warn" || f.level === "error" || f.stage === "error" ? ICON.warn : ICON.ok}</i>`;
+    return `<li class="${esc(f.stage === "error" ? "error" : f.level)}"><span class="pill">${mark}<span class="${live ? "shine" : ""}">${verb}${live ? "…" : ""}</span></span><span class="det">${esc(f.text)}</span><time>${f.t != null ? mmss(f.t) : ""}</time></li>`;
+  }).join("");
+  Orbs.scan($("#feed"));
+}
 
-  // statuses
+// ----------------------------------------------------------------- flow graph
+function drawFlow() {
+  const host = $("#flow");
+  const W = Math.max(1240, host.parentElement.clientWidth);
+  const callIds = callOrder;
+  const rowH = 74, callsH = Math.max(1, callIds.length) * rowH;
+  const H = Math.max(240, callsH + 64), cy = 30 + (H - 30) / 2;
+  // columns left to right with equal gaps; the gap after the calls is wider for retry loops
+  const widths = { brief: 140, plan: 140, route: 46, calls: 210, merge: 120, check: 104, render: 124, video: 46 };
+  const order = Object.keys(widths), extra = 40;
+  const gap = (W - 4 - extra - order.reduce((a, k) => a + widths[k], 0)) / (order.length - 1);
+  const xs = {}; order.reduce((x, k) => { xs[k] = x; return x + widths[k] + gap + (k === "calls" ? extra : 0); }, 0);
+  const X = (k) => xs[k];
+  const cw = widths.calls, nh = 46;
   const s = {
-    brief: "done", plan: st("outline") === "pending" ? (st("keys") === "running" ? "running" : st("keys")) : st("outline"),
+    brief: "done", plan: st("outline") === "pending" ? (st("keys") === "running" ? "running" : "pending") : st("outline"),
     route: scenes.length ? (callIds.some((c) => calls[c].status === "running") ? "running" : callIds.length ? "done" : "running") : "pending",
     merge: st("assemble") === "pending" && st("validate") !== "pending" ? "done" : st("assemble"),
     check: st("validate"), render: st("render"), video: st("done"),
   };
-  if (s.plan === "skipped") s.plan = "done";
   const sig = JSON.stringify([W, s, callIds.map((c) => [calls[c].status, calls[c].key, calls[c].scenes.map((i) => st(`scene-${i}`))]), scenes.length]);
-  const pctEl = svg.querySelector("#renderPct");
-  if (sig === lastSig) { if (pctEl && s.render === "running") { pctEl.textContent = Math.round(renderP * 100) + "%"; svg.querySelector("#ringFg").style.strokeDashoffset = 2 * Math.PI * 14 * (1 - renderP); } return; }
+  const pctEl = host.querySelector("#renderPct");
+  if (pctEl && s.render === "running") { pctEl.textContent = `${Math.round(renderP * 100)}% of frames`; Orbs.set(host.querySelector("#renderOrb"), "render", renderP); }
+  if (sig === lastSig) return;
   lastSig = sig;
 
-  const edgeCls = (from, to) => (s[to] === "running" ? "live" : s[to] === "pending" || s[to] === undefined ? "" : "done");
-  const mid = (b) => ({ x1: b.x + b.w, y: b.y + b.h / 2 });
-  const curve = (a, b, cls, pulse) => {
-    const x1 = a.x + a.w, y1 = a.y + a.h / 2, x2 = b.x, y2 = b.y + b.h / 2, m = (x1 + x2) / 2;
-    const d = `M${x1},${y1} C${m},${y1} ${m},${y2} ${x2},${y2}`;
-    return `<path class="edge ${cls}" d="${d}"/>` + (pulse ? `<circle class="pulse" r="3"><animateMotion dur="1.1s" repeatCount="indefinite" path="${d}"/></circle>` : "");
+  const top = cy - callsH / 2;
+  const B = {
+    brief: { x: X("brief"), y: cy - nh / 2, w: widths.brief, h: nh }, plan: { x: X("plan"), y: cy - nh / 2, w: widths.plan, h: nh },
+    route: { x: X("route"), y: cy - 23, w: 46, h: 46 }, merge: { x: X("merge"), y: cy - nh / 2, w: widths.merge, h: nh },
+    check: { x: X("check"), y: cy - nh / 2, w: widths.check, h: nh }, render: { x: X("render"), y: cy - nh / 2, w: widths.render, h: nh },
+    video: { x: X("video"), y: cy - 23, w: 46, h: 46 },
   };
-  const icon = (cx, cyy, g) => `<circle class="ic" cx="${cx}" cy="${cyy}" r="11"/><path class="glyph" transform="translate(${cx},${cyy})" d="${GLYPH[g]}"/>`;
-  const clip = (t, px, per = 7) => { const k = Math.max(4, Math.floor(px / per)); return t.length > k ? t.slice(0, k - 1) + "…" : t; };
-  const card = (b, status, g, title, sub) => `<g class="n ${status}"><rect class="box" x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="12"/>
-    ${status === "running" ? `<rect class="ring" x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="12"/>` : ""}
-    ${icon(b.x + 22, b.y + b.h / 2, status === "done" && g !== "video" ? "check" : g)}
-    <text class="t" x="${b.x + 40}" y="${b.y + (sub ? b.h / 2 - 3 : b.h / 2 + 4)}">${esc(clip(title, b.w - 46))}</text>
-    ${sub ? `<text class="d" x="${b.x + 40}" y="${b.y + b.h / 2 + 13}">${esc(clip(sub, b.w - 46, 6.2))}</text>` : ""}</g>`;
+  const cb = (i) => ({ x: X("calls"), y: top + i * rowH + (rowH - 62) / 2, w: cw, h: 62 });
+  const orbOf = (status, run, done = "done") => status === "running" ? run : status === "done" ? done : status === "warn" ? "retry" : status === "failed" ? "failed" : "idle";
+  const ec = (to) => (to === "running" ? "live" : to === "pending" || !to ? "" : "done");
+  let edges = "";
+  // solid edges; a live edge carries a travelling light
+  const path = (d, cls, live, amber) => { edges += `<path class="e ${cls}" d="${d}"/>` + (live ? `<path class="comet${amber ? " amber" : ""}" pathLength="100" d="${d}"/>` : ""); };
+  const curve = (a, b, cls, live, amber) => {
+    const x1 = a.x + a.w, y1 = a.y + a.h / 2, x2 = b.x, y2 = b.y + b.h / 2, m = (x1 + x2) / 2;
+    path(`M${x1},${y1} C${m},${y1} ${m},${y2} ${x2},${y2}`, cls, live, amber);
+  };
+  curve(B.brief, B.plan, ec(s.plan), s.plan === "running");
+  curve(B.plan, B.route, ec(s.route), s.route === "running" && !callIds.length);
+  callIds.forEach((c, i) => {
+    const b = cb(i), cs = calls[c].status, retry = calls[c].retry;
+    curve(B.route, b, retry ? "retry" : ec(cs), cs === "running", retry);
+    curve(b, B.merge, ["done", "warn"].includes(cs) && s.merge !== "pending" ? "done" : "", false);
+    if (retry) {
+      const from = callIds.findIndex((o) => !calls[o].retry && calls[o].scenes.some((x) => calls[c].scenes.includes(x)));
+      if (from >= 0) { const a = cb(from), x = a.x + a.w; path(`M${x},${a.y + a.h / 2} C${x + 44},${a.y + a.h / 2} ${x + 44},${b.y + b.h / 2} ${x},${b.y + b.h / 2}`, "retry", cs === "running", true); }
+    }
+  });
+  if (!callIds.length) curve(B.route, B.merge, "", false);
+  curve(B.merge, B.check, ec(s.check), s.check === "running");
+  curve(B.check, B.render, ec(s.render), s.render === "running");
+  curve(B.render, B.video, ec(s.video), false);
+
+  const pos = (b) => `left:${b.x}px;top:${b.y}px;`;
+  const node = (b, status, orb, title, sub) => `<div class="node ${status}" style="${pos(b)}width:${b.w}px">
+    <canvas class="orb" data-state="${orb}" data-dots="90"></canvas><span><b>${esc(title)}</b>${sub ? `<small>${sub}</small>` : ""}</span></div>`;
+  const round = (b, status, orb, label) => `<div class="node round ${status}" style="${pos(b)}"><canvas class="orb" data-state="${orb}" data-dots="80"></canvas><span class="under">${label}</span></div>`;
   const worker = (k) => (k ? "Worker " + String(k).replace(/\D+/g, "") : "");
-
-  let out = "";
-  // column captions
+  let html = `<svg class="edges" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${edges}</svg>`;
   [["brief", "Input"], ["plan", "Planner"], ["calls", "Parallel model calls"], ["merge", "Assemble"], ["check", "Verify"], ["render", "Render"]]
-    .forEach(([k, t]) => (out += `<text class="col" x="${X(k) + 2}" y="14">${t}</text>`));
-
-  out += curve(B.brief, B.plan, edgeCls("brief", "plan"), s.plan === "running");
-  out += curve(B.plan, B.route, edgeCls("plan", "route"), s.route === "running" && !callIds.length);
+    .forEach(([k, t]) => (html += `<span class="col-label" style="left:${X(k) + 4}px">${t}</span>`));
+  html += node(B.brief, "done", "done", "Brief", esc((job?.request?.topic || "").slice(0, 40)));
+  html += node(B.plan, s.plan, orbOf(s.plan, "think"), "Planner", s.plan === "done" ? `${scenes.length} scenes, ${(nodes.outline || {}).seconds || ""}s` : s.plan === "running" ? "Outlining" : "Waiting");
+  html += round(B.route, s.route, orbOf(s.route, "route"), "Router");
   callIds.forEach((c, i) => {
-    const cb = callBox(i), cs = calls[c].status;
-    out += curve(B.route, cb, cs === "running" ? "live" : cs === "pending" ? "" : calls[c].retry ? "retry" : "done", cs === "running");
-    out += curve(cb, B.merge, ["done", "warn"].includes(cs) && s.merge !== "pending" ? "done" : "", false);
-  });
-  if (!callIds.length) out += curve(B.route, B.merge, "", false);
-  out += curve(B.merge, B.check, edgeCls("merge", "check"), s.check === "running");
-  out += curve(B.check, B.render, edgeCls("check", "render"), s.render === "running");
-  out += curve(B.render, B.video, edgeCls("render", "video"), false);
-
-  // retry loops: from the call that failed a scene to the call that retried it
-  callIds.forEach((c, i) => {
-    if (!calls[c].retry) return;
-    const from = callIds.findIndex((o) => !calls[o].retry && calls[o].scenes.some((x) => calls[c].scenes.includes(x)));
-    if (from < 0) return;
-    const a = callBox(from), b = callBox(i), x = a.x + a.w;
-    out += `<path class="edge retry" d="M${x},${a.y + a.h / 2} C${x + 46},${a.y + a.h / 2} ${x + 46},${b.y + b.h / 2} ${x},${b.y + b.h / 2}"/>`;
-  });
-
-  out += card(B.brief, "done", "brief", "Brief", clip(job?.request?.topic || "", 80));
-  out += card(B.plan, s.plan, "plan", "Planner", s.plan === "done" ? `${scenes.length} scenes, ${(nodes.outline || {}).seconds || ""}s` : s.plan === "running" ? "Outlining" : "");
-  out += `<g class="n ${s.route}"><rect class="box" x="${B.route.x}" y="${B.route.y}" width="40" height="40" rx="20"/>${s.route === "running" ? `<rect class="ring" x="${B.route.x}" y="${B.route.y}" width="40" height="40" rx="20"/>` : ""}${icon(B.route.x + 20, B.route.y + 20, "route")}
-    <text class="d" x="${B.route.x + 20}" y="${B.route.y + 56}" text-anchor="middle">Router</text></g>`;
-
-  callIds.forEach((c, i) => {
-    const cb = callBox(i), call = calls[c];
-    const sub = call.status === "running" ? (call.retry ? "Retrying with the error" : "Generating") :
-      call.status === "failed" ? "Call failed" : `${worker(call.key)}${call.seconds ? `, ${call.seconds}s` : ""}`;
+    const b = cb(i), call = calls[c];
+    const sub = call.status === "running" ? (call.retry ? "Retrying with the error" : "Generating") : call.status === "failed" ? "Call failed" : `${worker(call.key)}${call.seconds ? `, ${call.seconds}s` : ""}`;
     const title = call.retry ? `Retry scene ${call.scenes.map((x) => x + 1).join(", ")}` : `Call ${i + 1}`;
-    out += `<g class="n ${call.status}"><rect class="box" x="${cb.x}" y="${cb.y}" width="${cb.w}" height="${cb.h}" rx="12"/>
-      ${call.status === "running" ? `<rect class="ring" x="${cb.x}" y="${cb.y}" width="${cb.w}" height="${cb.h}" rx="12"/>` : ""}
-      ${icon(cb.x + 22, cb.y + 22, call.retry ? "retry" : call.status === "done" ? "check" : "call")}
-      <text class="t" x="${cb.x + 40}" y="${cb.y + 19}">${esc(title)}</text><text class="d" x="${cb.x + 40}" y="${cb.y + 34}">${esc(sub)}</text>`;
-    // scene chips
-    call.scenes.forEach((si, k) => {
-      const ss = st(`scene-${si}`), cx = cb.x + 40 + k * 26;
-      out += `<g class="chip ${ss}"><title>${esc((scenes[si] || {}).title || "")}</title><rect x="${cx}" y="${cb.y + 41}" width="22" height="15" rx="4"/><text x="${cx + 11}" y="${cb.y + 52}" text-anchor="middle">${si + 1}</text></g>`;
-    });
-    out += `</g>`;
+    const dots = call.scenes.map((si) => `<i class="${st(`scene-${si}`)}" title="${esc((scenes[si] || {}).title || "")}">${si + 1}</i>`).join("");
+    html += `<div class="node call ${call.status}" style="${pos(b)}width:${cw}px"><canvas class="orb" data-state="${orbOf(call.status, call.retry ? "retry" : "work")}" data-dots="90"></canvas>
+      <span><b>${esc(title)}</b><small>${esc(sub)}</small><span class="dots">${dots}</span></span></div>`;
   });
-
-  out += card(B.merge, s.merge, "merge", "Assemble", s.merge === "done" ? ((nodes.assemble || {}).beats != null ? `${(nodes.assemble || {}).beats} beats` : "Joined") : "");
-  out += card(B.check, s.check, "check", "Verify", s.check === "done" ? "Formulas OK" : s.check === "running" ? "KaTeX, timing" : "");
-  const C = 2 * Math.PI * 14;
-  out += `<g class="n ${s.render}"><rect class="box" x="${B.render.x}" y="${B.render.y}" width="${B.render.w}" height="${B.render.h}" rx="12"/>
-    ${s.render === "running" ? `<rect class="ring" x="${B.render.x}" y="${B.render.y}" width="${B.render.w}" height="${B.render.h}" rx="12"/>` : ""}
-    ${s.render === "running" ? `<circle class="ringbg" cx="${B.render.x + 24}" cy="${cy}" r="14"/><circle id="ringFg" class="ringfg" cx="${B.render.x + 24}" cy="${cy}" r="14" stroke-dasharray="${C}" style="stroke-dashoffset:${C * (1 - renderP)}" transform="rotate(-90 ${B.render.x + 24} ${cy})"/>`
-      : icon(B.render.x + 22, cy, s.render === "done" ? "check" : "render")}
-    <text class="t" x="${B.render.x + 46}" y="${cy - 3}">Render</text><text class="d" id="renderPct" x="${B.render.x + 46}" y="${cy + 13}">${s.render === "running" ? Math.round(renderP * 100) + "%" : s.render === "done" ? "Encoded" : ""}</text></g>`;
-  out += `<g class="n ${s.video}"><rect class="box" x="${B.video.x}" y="${B.video.y}" width="40" height="40" rx="20"/>${icon(B.video.x + 20, B.video.y + 20, "video")}
-    <text class="d" x="${B.video.x + 20}" y="${B.video.y + 56}" text-anchor="middle">Video</text></g>`;
-  svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.setAttribute("height", H); svg.innerHTML = out;
+  const asm = nodes.assemble || {};
+  html += node(B.merge, s.merge, orbOf(s.merge, "verify"), "Assemble", s.merge === "done" ? (asm.beats != null ? `${asm.beats} beats joined` : "Joined") : s.merge === "running" ? "Joining" : "Waiting");
+  html += node(B.check, s.check, orbOf(s.check, "verify"), "Verify", s.check === "done" ? "Formulas OK" : s.check === "running" ? "Checking" : "Waiting");
+  html += `<div class="node ${s.render}" style="${pos(B.render)}width:${B.render.w}px"><canvas class="orb" id="renderOrb" data-state="${orbOf(s.render, "render")}" data-dots="110"></canvas>
+    <span><b>Render</b><small id="renderPct">${s.render === "running" ? `${Math.round(renderP * 100)}% of frames` : s.render === "done" ? "Encoded" : "Waiting"}</small></span></div>`;
+  html += round(B.video, s.video, s.video === "done" ? "done" : "idle", "Video");
+  host.style.height = H + "px"; host.style.width = W + "px";
+  host.innerHTML = html;
+  Orbs.scan(host);
+  const ro = host.querySelector("#renderOrb"); if (ro) Orbs.set(ro, null, renderP);
 }
-window.addEventListener("resize", () => { if (!$("#v-job").hidden) { lastSig = ""; drawGraph(); } });
+window.addEventListener("resize", () => { if (!$("#v-job").hidden) { lastSig = ""; drawFlow(); } });
 
+// worker names, never key names, in anything a viewer reads
+const friendly = (m) => m.replace(/NVIDIA_API_KEY_(\d+)(?:\s*\([^)]*\))?/g, "worker $1").replace(/\bkey(\d)\b/g, "worker $1");
 function addLog(e) {
   logs.push(e);
   if (e.level === "debug") return;
-  $("#log").insertAdjacentHTML("beforeend", `<div class="${esc(e.level)}"><time>${e.t != null ? Number(e.t).toFixed(1) : ""}</time><span>${esc(friendly(e.message))}</span></div>`);
+  const msg = friendly(e.message);
+  $("#log").insertAdjacentHTML("beforeend", `<div class="${esc(e.level)}"><time>${e.t != null ? Number(e.t).toFixed(1) : ""}</time><span>${esc(msg)}</span></div>`);
   const box = $("#log"); box.scrollTop = box.scrollHeight;
-  if (["keys", "server", "stderr"].includes(e.stage)) return; // infrastructure detail stays in the log
-  setTicker(friendly(e.message), e.level);
+  if (["server", "stderr", "keys"].includes(e.stage)) return;
+  feedPush(e.stage, msg, e.level, e.t);
+  if (e.stage === "render") return;
+  setTicker(msg, e.level);
 }
-// worker names, never key names, in anything a viewer reads
-const friendly = (m) => m.replace(/NVIDIA_API_KEY_(\d+)(?:\s*\([^)]*\))?/g, "worker $1").replace(/\bkey(\d)\b/g, "worker $1");
 function onEvent(e) {
   if (typeof e.t === "number" && e.t > maxT) { maxT = e.t; t0 = Date.now() - e.t * 1000; }
   switch (e.type) {
@@ -654,25 +1019,25 @@ function onEvent(e) {
         Object.assign(calls[e.id], e);
       } else nodes[e.id] = { ...(nodes[e.id] || {}), ...e, _at: (nodes[e.id] || {})._at || Date.now() };
       update(); break;
-    case "outline":
-      scenes = e.scenes; $("#jobTitle").textContent = e.title; update(); break;
+    case "outline": scenes = e.scenes; $("#jobTitle").textContent = e.title; update(); break;
     case "progress":
       if (e.stage === "render") {
         renderP = e.value; if (e.frames) job.frames = e.frames;
-        if (job.frames && e.rendered != null) setTicker(`Rendered ${e.rendered.toLocaleString()} of ${job.frames.toLocaleString()} frames`);
-      } else if (e.stage === "bundle") { bundleP = e.value; setTicker("Bundling the animation library"); }
+        if (job.frames && e.rendered != null) { const m = `Rendered ${e.rendered.toLocaleString()} of ${job.frames.toLocaleString()} frames`; setTicker(m); feedPush("render", m, "info", e.t); }
+      } else if (e.stage === "bundle") { bundleP = e.value; setTicker("Bundling the animation library"); feedPush("bundle", "Bundling the animation library", "info", e.t); }
       nodes.render = { ...(nodes.render || {}), status: "running" }; update(); break;
     case "status": finishJob(e.status, e.result); break;
   }
 }
 function finishJob(status, result) {
   clearInterval(clockTimer); if (es) { es.close(); es = null; }
-  $("#cancel").hidden = true; $("#track").classList.add("idle");
+  $("#cancel").hidden = true;
   if (status === "done" && result && result.dir) {
-    nodes.done = { status: "done" }; update(); setTicker("Your video is ready");
+    nodes.done = { status: "done" }; update(); renderFeed(); setTicker("Opening the video");
     const id = result.dir.split(/[\\/]/).pop();
-    library = []; loadLibrary().then(() => setTimeout(() => { location.hash = `#/watch/${encodeURIComponent(id)}`; }, 700));
+    library = []; loadLibrary().then(() => setTimeout(() => { if (!$("#v-job").hidden) location.hash = `#/watch/${encodeURIComponent(id)}`; }, 1200));
   } else {
+    job.failed = true; update(); renderFeed();
     $("#jobError").hidden = false;
     $("#jobError").textContent = status === "cancelled" ? "Cancelled. Nothing was rendered." : `This lesson could not be created: ${result?.error || "open the technical log for details."}`;
     setTicker(status === "cancelled" ? "Cancelled" : "Stopped with an error", "error");
@@ -689,22 +1054,22 @@ function attach(j) {
 }
 $("#cancel").onclick = async () => { if (job) await api(`/api/jobs/${job.id}/cancel`, { method: "POST" }).catch(() => {}); };
 
-// ================================================================ submit
+// ==================================================================== submit
 async function submit(e) {
   e && e.preventDefault();
   $("#formError").textContent = "";
   const body = { topic: $("#topic").value.trim(), brief: $("#brief").value.trim(), audience: form.audience, duration: form.duration, model: form.model };
   if (body.topic.length < 3) { $("#formError").textContent = "Add a topic to create a video."; $("#topic").focus(); return; }
-  $("#go").disabled = true;
+  $("#go").disabled = true; $("#goText").textContent = "Starting…"; heroState("route", "Routing to the planner…");
   try { const j = await api("/api/build", { method: "POST", body: JSON.stringify(body) }); location.hash = `#/job/${j.id}`; }
-  catch (err) { $("#formError").textContent = err.message; }
-  finally { $("#go").disabled = false; }
+  catch (err) { $("#formError").textContent = err.message; heroState("breathe", "Ready when you are"); }
+  finally { $("#go").disabled = false; $("#goText").textContent = "Create video"; }
 }
 $("#composer").addEventListener("submit", submit);
 $("#composer").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) submit(e); else if (e.key === "Enter" && e.target.id === "topic") { e.preventDefault(); $("#brief").focus(); } });
 $("#brief").addEventListener("input", (e) => { e.target.style.height = "auto"; e.target.style.height = Math.min(320, e.target.scrollHeight) + "px"; });
 
-// ================================================================ router
+// ==================================================================== router
 async function route() {
   const [, view, id] = (location.hash || "#/").replace(/^#/, "").split("/");
   ["create", "job", "watch", "library"].forEach((v) => ($(`#v-${v}`).hidden = true));
@@ -713,10 +1078,11 @@ async function route() {
   if (view === "job" && id) {
     $("#v-job").hidden = false;
     if (!job || job.id !== id) { try { attach(await api(`/api/jobs/${id}`)); } catch (_) { location.hash = "#/"; } }
-    lastSig = ""; drawGraph();
+    lastSig = ""; drawFlow();
   } else if (view === "watch" && id) { $("#v-watch").hidden = false; showWatch(decodeURIComponent(id)); }
   else if (view === "library") { $("#v-library").hidden = false; document.querySelector('[data-nav="library"]').setAttribute("aria-current", "page"); loadLibrary(); }
-  else { $("#v-create").hidden = false; document.querySelector('[data-nav="create"]').setAttribute("aria-current", "page"); }
+  else { $("#v-create").hidden = false; document.querySelector('[data-nav="create"]').setAttribute("aria-current", "page"); heroState("breathe", "Ready when you are"); renderIdeas(document.querySelector('#subjectSeg [aria-pressed="true"]').dataset.s); }
+  if (job) update();
   window.scrollTo(0, 0);
 }
 window.addEventListener("hashchange", route);

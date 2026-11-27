@@ -11,11 +11,11 @@ import re
 from collections import Counter
 
 from src import mathexpr
-from src.catalog import CATALOG, COMMON_FIELDS
-from src.schema import SchemaError
+from src.catalog import CATALOG, COMMON_FIELDS, MAX_BEATS, beat_fields
+from src.schema import Num, SchemaError
 
 FPS = 30
-OVERLAP = 20  # frames neighbouring scenes share during a handover (theme.ts OVERLAP)
+OVERLAP = 30  # frames neighbouring scenes share during a handover (theme.ts OVERLAP)
 
 
 def scene_starts(scenes: list[dict]) -> tuple[list[float], float]:
@@ -226,26 +226,80 @@ def clean_scene(raw: dict, expected_type: str | None = None) -> dict:
     spec = CATALOG[kind]
     scene: dict = {"type": kind}
     for key, fld in COMMON_FIELDS.items():
-        if key == "notes" and not spec.notes:
-            scene[key] = []
-            continue
         scene[key] = fld.resolve(raw.get(key), key)
     for key, fld in spec.fields.items():
         scene[key] = fld.resolve(raw.get(key), key)
     _check(scene)
+    scene["beats"] = clean_beats(scene, raw.get("beats"))
     return scene
 
 
-def fallback_scene(kind: str, title: str, goal: str) -> dict:
-    """Used when a model cannot produce a valid scene after retries."""
-    return {
-        "type": "key_points",
-        "title": title[:64] or "Key idea",
-        "caption": goal[:200] or title,
-        "notes": [],
-        "items": [{"label": title[:32] or "Idea", "text": (goal or title)[:100]}],
-        "fallback_for": kind,
-    }
+def clean_beats(scene: dict, raw) -> list[dict]:
+    """Validate beats: each changes some top-level setup values of the same diagram.
+
+    Every beat state is re-checked with the type's own rules, so a beat can never
+    produce a setup the renderer would refuse (e.g. object exactly at F).
+    """
+    movable = beat_fields(scene["type"])
+    if not movable or not isinstance(raw, list):
+        return []
+    beats: list[dict] = []
+    state = {k: scene[k] for k in movable}
+    for i, item in enumerate(raw[:MAX_BEATS]):
+        if not isinstance(item, dict):
+            continue
+        changes = item.get("set") if isinstance(item.get("set"), dict) else {
+            k: v for k, v in item.items() if k in movable}
+        clean: dict = {}
+        for key, value in (changes or {}).items():
+            if key not in movable:
+                continue
+            try:
+                clean[key] = movable[key].resolve(value, f"beats[{i}].set.{key}")
+            except SchemaError:
+                continue
+        clean = {k: v for k, v in clean.items() if v != state.get(k)}
+        if not clean:
+            continue
+        probe = {**scene, **state, **clean}
+        _check(probe)  # applies the same physical guards as the base setup
+        clean = {k: probe[k] for k in clean}
+        state.update(clean)
+        caption = COMMON_FIELDS["caption"].resolve(item.get("caption") or scene["caption"], f"beats[{i}].caption")
+        beat = {"set": clean, "caption": caption,
+                "ints": [k for k in clean if isinstance(movable[k], Num) and movable[k].integer]}
+        if item.get("title"):
+            beat["title"] = COMMON_FIELDS["title"].resolve(item["title"], f"beats[{i}].title")
+        beats.append(beat)
+    return beats
+
+
+def merge_runs(scenes: list[dict]) -> list[dict]:
+    """Fold a scene into the previous one when it shows the same diagram with a new setup.
+
+    Two consecutive projectile scenes at 45° and 30° become one scene whose angle
+    animates from 45° to 30°, instead of a cut between two near-identical frames.
+    """
+    out: list[dict] = []
+    for scene in scenes:
+        prev = out[-1] if out else None
+        if prev and prev["type"] == scene["type"] and beat_fields(scene["type"]) \
+                and len(prev.get("beats") or []) < MAX_BEATS:
+            movable = beat_fields(scene["type"])
+            fixed = [k for k in CATALOG[scene["type"]].fields if k not in movable]
+            if all(prev.get(k) == scene.get(k) for k in fixed):
+                last = {k: prev[k] for k in movable}
+                for beat in prev.get("beats") or []:
+                    last.update(beat["set"])
+                changes = {k: scene[k] for k in movable if scene.get(k) != last.get(k)}
+                if changes:
+                    prev.setdefault("beats", []).append({
+                        "set": changes, "caption": scene["caption"], "title": scene["title"],
+                        "ints": [k for k in changes if isinstance(movable[k], Num) and movable[k].integer]})
+                    prev["beats"].extend((scene.get("beats") or [])[: MAX_BEATS - len(prev["beats"])])
+                    continue
+        out.append(scene)
+    return out
 
 
 # ------------------------------------------------------------------ timing
@@ -253,10 +307,19 @@ def _words(text: str) -> int:
     return len(re.findall(r"\w+", text or ""))
 
 
+MORPH = 40  # frames a beat takes to animate from one setup to the next (Lesson.tsx MORPH)
+
+
+def _say(caption: str) -> float:
+    """Seconds a viewer needs to read one subtitle."""
+    return _words(caption) / 2.6 + 1.2
+
+
 def scene_seconds(scene: dict) -> float:
+    """Length of the scene's first segment: the build-up animation and its caption."""
     kind = scene["type"]
     base = CATALOG[kind].base_seconds if kind in CATALOG else 8
-    read = _words(scene.get("caption", "")) / 2.5 + 2.0
+    read = _say(scene.get("caption", "")) + 1.0
     extra = 0.0
     if kind == "equation":
         extra = 2.4 * len(scene["steps"]) + 1.5
@@ -278,15 +341,29 @@ def scene_seconds(scene: dict) -> float:
         extra = _words(scene["meaning"]) / 2.6 + 2.5 + 1.2 * len(scene["symbols"])
     elif kind == "sequence":
         extra = 1.0 * scene["terms"] + 5
-    extra += 1.2 * len(scene.get("notes") or [])
-    return max(4.0, min(26.0, max(base, read, extra)))
+    return max(4.0, min(24.0, max(base, read, extra)))
+
+
+def beat_seconds(beat: dict) -> float:
+    return max(3.6, MORPH / FPS + _say(beat.get("caption", "")) + 0.6)
 
 
 def time_storyboard(scenes: list[dict], target_seconds: float | None = None) -> None:
-    raw = [scene_seconds(s) for s in scenes]
-    total = sum(raw)
+    """Set each scene's duration (frames) and each beat's start frame inside it."""
+    parts = [[scene_seconds(s)] + [beat_seconds(b) for b in s.get("beats") or []] for s in scenes]
+    # the title card is a fixed short beat; only the teaching scenes stretch to fit the target
+    fixed = sum(sum(p) for s, p in zip(scenes, parts) if s["type"] == "title")
+    total = sum(sum(p) for p in parts) - fixed
     scale = 1.0
     if target_seconds and total > 0:
-        scale = max(0.85, min(1.4, target_seconds / total))
-    for scene, seconds in zip(scenes, raw):
-        scene["duration"] = int(round(max(4.0, seconds * scale) * FPS))
+        scale = max(0.85, min(1.4, (target_seconds - fixed) / total))
+    for scene, segs in zip(scenes, parts):
+        at = 0
+        if scene["type"] == "title":
+            scene["duration"] = int(round(min(5.0, max(3.6, segs[0])) * FPS))
+            continue
+        frames = [int(round(max(3.4, seg * scale) * FPS)) for seg in segs]
+        for beat, start in zip(scene.get("beats") or [], frames[:-1]):
+            at += start
+            beat["at"] = at
+        scene["duration"] = sum(frames)

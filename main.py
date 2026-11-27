@@ -39,6 +39,17 @@ REMOTION = ROOT / "remotion_project"
 VIDEOS = ROOT / "output" / "videos"
 
 
+def chapters(scenes: list[dict], starts: list[float]) -> list[dict]:
+    """One chapter per scene and per titled beat, in video seconds."""
+    out = []
+    for i, scene in enumerate(scenes):
+        out.append({"title": scene.get("title") or scene["type"], "type": scene["type"], "start": round(starts[i], 2)})
+        for beat in scene.get("beats") or []:
+            if beat.get("title") and beat["title"] != out[-1]["title"]:
+                out.append({"title": beat["title"], "type": scene["type"], "start": round(starts[i] + beat["at"] / FPS, 2)})
+    return out
+
+
 def slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:48] or "lesson"
 
@@ -145,8 +156,7 @@ def build(topic: str, brief: str, audience: str, seconds: int, model: str,
         "chapter": outline["chapter"], "level": props["meta"]["level"], "model": model,
         "seconds": round(total, 1), "elapsed": round(time.time() - started, 1),
         "dir": str(run_dir), "video": str(video) if video.exists() else None, "storyboard": str(props_file),
-        "chapters": [{"title": s.get("title") or s["type"], "type": s["type"],
-                      "start": round(starts[i], 2)} for i, s in enumerate(scenes)],
+        "chapters": chapters(scenes, starts),
         "keys": usage,
     }
     (run_dir / "run.json").write_text(json.dumps(result, indent=1, ensure_ascii=False), encoding="utf-8")

@@ -38,6 +38,9 @@ type OpticsModel = {
 };
 
 const solve = ({ kind, curved, f, d }: OpticsModel) => {
+  // an object exactly at F images at infinity; while a beat sweeps through F keep the maths finite
+  const converging = kind === "lens" ? curved === "convex" : curved === "concave";
+  if (converging && Math.abs(d - f) < 0.012 * f) d = f + (d >= f ? 1 : -1) * 0.012 * f;
   if (kind === "lens") {
     const fs = curved === "convex" ? f : -f;
     const u = -d;
@@ -58,18 +61,27 @@ const verdictText = (real: boolean, m: number) => {
   return `${real ? "Real" : "Virtual"}, ${m < 0 ? "inverted" : "erect"}, ${size}`;
 };
 
-const OpticsDiagram: React.FC<SceneProps & { model: OpticsModel }> = ({ dur, box, model }) => {
+const OpticsDiagram: React.FC<SceneProps & { model: OpticsModel; states?: OpticsModel[] }> = ({ dur, box, model, states }) => {
   const frame = useCurrentFrame();
   const { kind, curved, f, d, h } = model;
   const { v, m, xF, real } = solve(model);
   const hi = m * h;
   const isLens = kind === "lens";
 
-  // world extents (cm). Keep the image in view when reasonable.
-  const vis = Math.max(-4.2 * f, Math.min(5.5 * f, v));
-  const xmin = Math.min(-d, -2.2 * f, isLens ? vis : Math.min(vis, 0)) * 1.12;
-  const xmax = isLens ? Math.max(2.4 * f, vis) * 1.1 : Math.max(2.2 * f * (curved === "convex" ? 1 : 0.6), vis, 0.6 * f) * 1.15;
-  const yext = Math.max(h, Math.min(Math.abs(hi), 3.2 * h)) * 1.35;
+  // world extents (cm), fitted once over every beat state so the view holds still while the setup moves
+  const extent = (st: OpticsModel) => {
+    const sv = solve(st);
+    const vis = Math.max(-4.2 * st.f, Math.min(5.5 * st.f, sv.v));
+    return {
+      xmin: Math.min(-st.d, -2.2 * st.f, isLens ? vis : Math.min(vis, 0)) * 1.12,
+      xmax: isLens ? Math.max(2.4 * st.f, vis) * 1.1 : Math.max(2.2 * st.f * (st.curved === "convex" ? 1 : 0.6), vis, 0.6 * st.f) * 1.15,
+      yext: Math.max(st.h, Math.min(Math.abs(sv.m * st.h), 3.2 * st.h)) * 1.35,
+    };
+  };
+  const exts = (states && states.length ? states : [model]).map(extent);
+  const xmin = Math.min(...exts.map((e) => e.xmin));
+  const xmax = Math.max(...exts.map((e) => e.xmax));
+  const yext = Math.max(...exts.map((e) => e.yext));
   const padL = 30, padR = 330, padT = 40, padB = 40; // right column reserved for the readout
   const sx = (x: number) => padL + ((x - xmin) / (xmax - xmin)) * (box.w - padL - padR);
   const sy = (y: number) => padT + (1 - (y + yext) / (2 * yext)) * (box.h - padT - padB);
@@ -185,11 +197,13 @@ const OpticsDiagram: React.FC<SceneProps & { model: OpticsModel }> = ({ dur, box
   );
 };
 
+const lensModel = (s: any): OpticsModel => ({ kind: "lens", curved: s.lens, f: s.focal_length, d: s.object_distance, h: s.object_height });
+const mirrorModel = (s: any): OpticsModel => ({ kind: "mirror", curved: s.mirror, f: s.focal_length, d: s.object_distance, h: s.object_height });
 export const Lens: React.FC<SceneProps> = (p) => (
-  <OpticsDiagram {...p} model={{ kind: "lens", curved: p.s.lens, f: p.s.focal_length, d: p.s.object_distance, h: p.s.object_height }} />
+  <OpticsDiagram {...p} model={lensModel(p.s)} states={(p.s.__states || []).map(lensModel)} />
 );
 export const Mirror: React.FC<SceneProps> = (p) => (
-  <OpticsDiagram {...p} model={{ kind: "mirror", curved: p.s.mirror, f: p.s.focal_length, d: p.s.object_distance, h: p.s.object_height }} />
+  <OpticsDiagram {...p} model={mirrorModel(p.s)} states={(p.s.__states || []).map(mirrorModel)} />
 );
 
 // =============================================================== refraction

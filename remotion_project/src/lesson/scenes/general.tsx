@@ -16,7 +16,6 @@ export const TitleScene: React.FC<{ s: any; subject: string; meta: any }> = ({ s
   const frame = useCurrentFrame();
   const color = subjectColor(subject);
   const words = String(s.title || "").split(/\s+/).filter(Boolean);
-  const rule = prog(frame, 10 + words.length * 3, 34);
   const context = [meta.level, meta.chapter].filter(Boolean).join(", ");
   return (
     <AbsoluteFill style={{ justifyContent: "center", alignItems: "center", textAlign: "center" }}>
@@ -30,9 +29,8 @@ export const TitleScene: React.FC<{ s: any; subject: string; meta: any }> = ({ s
           <span key={i} style={{ display: "inline-block", marginRight: "0.24em", ...enter(frame, 8 + i * 3, 20, 26) }}>{w}</span>
         ))}
       </div>
-      <div style={{ marginTop: 44, width: 220 * rule, height: 3, borderRadius: 2, background: color }} />
       {s.subtitle ? (
-        <div style={{ marginTop: 40, maxWidth: 1180, color: C.muted, fontFamily: F.serif, fontStyle: "italic", fontSize: 42, lineHeight: 1.35, textWrap: "balance" as any, ...enter(frame, 22 + words.length * 3, 22, 12) }}>
+        <div style={{ marginTop: 48, maxWidth: 1180, color: C.muted, fontFamily: F.serif, fontStyle: "italic", fontSize: 42, lineHeight: 1.35, textWrap: "balance" as any, ...enter(frame, 22 + words.length * 3, 22, 12) }}>
           {s.subtitle}
         </div>
       ) : null}

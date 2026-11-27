@@ -57,7 +57,7 @@ export const STAGE_H = L.stageBottom - L.stageTop; // 704
 export const DIAGRAM_W = STAGE_W - L.notesWidth - L.gap; // 1168
 
 /** frames two neighbouring scenes overlap while one hands over to the next */
-export const OVERLAP = 20;
+export const OVERLAP = 30;
 
 export const T = {
   title: { fontSize: 50, fontWeight: 600, letterSpacing: "-0.01em", lineHeight: 1.1 },

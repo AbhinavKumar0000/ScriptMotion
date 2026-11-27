@@ -26,8 +26,9 @@ class SceneType:
     fields: dict[str, Field]
     example: dict
     base_seconds: float = 9.0
-    notes: bool = True  # renders a side column of `notes`
+    notes: bool = True  # legacy: side column of notes (no longer rendered)
     chapters: str = ""
+    hidden: bool = False  # kept for old storyboards; never offered to the planner
 
 
 def pt(desc: str = "") -> Obj:
@@ -66,6 +67,7 @@ add(SceneType(
      "items": [{"label": "Converging", "text": "Parallel rays meet at the principal focus F."},
                {"label": "Optical centre", "text": "A ray through the centre passes undeviated."}]},
     base_seconds=7, notes=False,
+    hidden=True,
 ))
 add(SceneType(
     "definition", "general",
@@ -81,6 +83,7 @@ add(SceneType(
      "formula": "P = \\frac{1}{f}", "symbols": [{"symbol": "P", "meaning": "power in dioptre (D)"},
                                                {"symbol": "f", "meaning": "focal length in metres"}]},
     base_seconds=8, notes=False,
+    hidden=True,
 ))
 add(SceneType(
     "equation", "general",
@@ -118,6 +121,7 @@ add(SceneType(
      "left": {"heading": "Real image", "items": ["Rays actually converge", "Can be caught on a screen", "Inverted"]},
      "right": {"heading": "Virtual image", "items": ["Rays only appear to diverge", "Cannot be projected", "Erect"]}},
     base_seconds=8, notes=False,
+    hidden=True,
 ))
 add(SceneType(
     "process", "general",
@@ -129,6 +133,7 @@ add(SceneType(
                {"label": "Iron catalyst", "detail": "450 °C reactor"},
                {"label": "Cool & separate", "detail": "NH₃ liquefies; gases recycled"}]},
     base_seconds=9, notes=False,
+    hidden=True,
 ))
 add(SceneType(
     "cycle", "general",
@@ -140,6 +145,7 @@ add(SceneType(
                 {"label": "Isothermal compression", "detail": "rejects Q₂ at T₂"},
                 {"label": "Adiabatic compression", "detail": "heats back to T₁"}]},
     base_seconds=9, notes=False,
+    hidden=True,
 ))
 add(SceneType(
     "table", "general",
@@ -154,6 +160,7 @@ add(SceneType(
               ["Between F and 2F", "Beyond 2F", "Real, enlarged"],
               ["Inside F", "Same side", "Virtual, enlarged"]], "highlight_row": 2},
     base_seconds=9, notes=False,
+    hidden=True,
 ))
 add(SceneType(
     "chart", "general",
@@ -178,6 +185,7 @@ add(SceneType(
      "options": ["Real and inverted", "Virtual and erect", "At infinity", "Real and diminished"],
      "answer": 1, "explanation": "Refracted rays diverge, so they only appear to meet on the object's side."},
     base_seconds=10, notes=False,
+    hidden=True,
 ))
 add(SceneType(
     "recap", "general",
@@ -186,6 +194,7 @@ add(SceneType(
     {"title": "Recap", "caption": "Three rays are enough to locate any image.",
      "items": ["Parallel ray refracts through F", "Central ray goes straight", "1/v − 1/u = 1/f gives the image distance"]},
     base_seconds=7, notes=False,
+    hidden=True,
 ))
 
 # ============================================================== physics
@@ -597,17 +606,24 @@ add(SceneType(
 
 COMMON_FIELDS: dict[str, Field] = {
     "title": Str(max=64, desc="short, specific scene title (not a question)"),
-    "caption": Str(max=220, desc="narration subtitles: 1-2 plain sentences, at most 30 words, that teach"),
-    "notes": List(item=Str(max=64), lo=0, hi=4, default=list, desc="2-4 short observations shown beside the diagram"),
+    "caption": Str(max=160, desc="narration subtitle: ONE plain sentence, at most 20 words, that says why"),
 }
 
-FIRST, LAST = "title", "recap"
+FIRST = "title"
+MAX_BEATS = 3
+
+
+def beat_fields(name: str) -> dict[str, Field]:
+    """Top-level setup values a scene may change continuously during its beats."""
+    if CATALOG[name].subject == "general":
+        return {}
+    return {k: f for k, f in CATALOG[name].fields.items() if isinstance(f, (Num, Enum, Bool))}
 
 
 def outline_menu(subject: str | None = None) -> str:
     rows = []
     for scene in CATALOG.values():
-        if subject and scene.subject not in ("general", subject):
+        if scene.hidden or (subject and scene.subject not in ("general", subject)):
             continue
         tag = f" [{scene.chapters}]" if scene.chapters else ""
         rows.append(f"- {scene.name} ({scene.subject}): {scene.use}{tag}")
@@ -618,9 +634,12 @@ def schema_text(name: str) -> str:
     scene = CATALOG[name]
     lines = [f'type "{name}": {scene.use}']
     for key, fld in COMMON_FIELDS.items():
-        if key == "notes" and not scene.notes:
-            continue
         lines.append(f"  {key}: {fld.describe()}")
     for key, fld in scene.fields.items():
         lines.append(f"  {key}: {fld.describe()}")
+    movable = beat_fields(name) if name != FIRST else {}
+    if movable:
+        lines.append(
+            f"  ?beats: array of 0-{MAX_BEATS} x {{ set: {{ field: new value }}, title: short title for this new setup, caption: one sentence }}"
+            f" - the same diagram then animates smoothly to each new setup; fields you may change: {', '.join(movable)}")
     return "\n".join(lines)

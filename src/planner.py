@@ -15,11 +15,11 @@ import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from src.catalog import CATALOG, FIRST, LAST, outline_menu, schema_text
+from src.catalog import CATALOG, FIRST, outline_menu, schema_text
 from src.events import log, node
 from src.llm.client import LLM, LLMError
 from src.schema import SchemaError
-from src.storyboard import clean_scene, fallback_scene
+from src.storyboard import clean_scene, merge_runs
 
 ROOT = Path(__file__).resolve().parent.parent
 REMOTION = ROOT / "remotion_project"
@@ -34,18 +34,20 @@ SLOP = [
     (r"!+", "."),
 ]
 
-SYSTEM = """You are a senior school teacher and instructional designer writing a short animated lesson.
-The video is assembled from a fixed library of pre-built, physically accurate animated components.
-You choose components and fill their data. You never write code, coordinates for physics, or styling.
+SYSTEM = """You are a senior teacher and motion designer directing a short animated explainer, in the spirit of 3Blue1Brown.
+The video is assembled from a fixed library of pre-built, physically accurate animated diagrams.
+You choose diagrams, set them up, and decide how each one evolves. You never write code, coordinates or styling.
 
-Teaching rules:
-- Teach one idea per scene. Build from what the student knows to the new idea.
-- Captions are narration subtitles: plain, specific, 1-2 sentences, max ~28 words. Say why, not just what.
-- Use concrete numbers a student can check. Prefer a diagram scene over a text scene.
-- Never state computed numeric results (image distance, current, range...) in captions or notes for
-  physics/chemistry components: the component computes and displays them itself.
+Directing rules:
+- The diagram teaches; words only point at it. No bullet lists, no summaries, no quizzes.
+- Captions are narration subtitles: ONE plain sentence, at most 20 words, saying what to watch and why.
+- Show change by moving the diagram, not by cutting to a new one: use "beats" to vary the setup
+  continuously (move the object toward F, raise the launch angle, increase the frequency).
+- Use concrete numbers a student can check.
+- Never state computed numeric results (image distance, current, range...) in captions: the diagram
+  computes and labels them itself, and they update live as beats change the setup.
 - No filler, hype or rhetorical questions ("Let's dive in", "fascinating", "journey", "unlock").
-- Titles are short noun phrases in sentence case.
+- Titles are short noun phrases in sentence case, at most 5 words.
 - Follow the teacher's brief exactly when one is given (focus, examples, values, level, language).
 - Each scene's Goal fixes its setup: use the Goal's numbers and choices exactly. The example under each
   field contract only shows the JSON shape; never reuse its values unless the Goal asks for them.
@@ -69,8 +71,8 @@ def _brief_block(brief: str, audience: str) -> str:
 
 # =================================================================== outline
 def plan_outline(llm: LLM, topic: str, brief: str, audience: str, seconds: int) -> dict:
-    n_lo = max(5, round(seconds / 13))
-    n_hi = max(n_lo + 1, round(seconds / 7))
+    n_lo = max(3, round(seconds / 22))
+    n_hi = max(n_lo + 1, round(seconds / 13))
     user = f"""Plan a lesson video.
 
 Topic: {topic}
@@ -81,15 +83,14 @@ Available components (type (subject): when to use [syllabus chapters]):
 {outline_menu()}
 
 Structure:
-1. "{FIRST}" first, "{LAST}" last.
-2. Mostly visual components from the topic's subject. Use at least 2 different visual components when the topic allows.
-3. Include one "worked_example" for any numerical topic and one "quiz" before the recap.
-4. Text components (key_points, definition, compare, table) at most 3 in total.
-6. Never show the same component with the same setup twice. Each animation already plays out its whole
-   story (e.g. "bonding" shows atoms, electron transfer and the resulting ions in one scene), so one
-   scene per setup; use the next scene for a different setup or a different component.
-5. Each scene's goal says precisely what that scene must show, including the concrete setup
-   (e.g. "convex lens f = 15 cm, object at 22 cm, show real enlarged image").
+1. "{FIRST}" first. Then visual diagrams from the topic's subject; end on the most telling diagram, not a summary.
+2. Each visual scene plays its build-up animation, then 1-3 beats that change its setup smoothly.
+   Put every variation of one diagram in ONE scene as beats, never in consecutive scenes
+   (e.g. one lens scene: object beyond 2F, beat: move it between F and 2F, beat: move it inside F).
+3. Use a second or third component only when the idea needs a different picture.
+4. At most one "worked_example" (only for numerical topics) and at most one "equation". Nothing else textual.
+5. Each scene's goal names the concrete starting setup and each beat's change
+   (e.g. "convex lens f = 10 cm, object at 25 cm; beats: object to 15 cm, then to 6 cm").
 
 Return:
 {{"title": "lesson title", "subject": "physics|chemistry|maths|general", "chapter": "syllabus chapter name",
@@ -103,23 +104,20 @@ Return:
         if not isinstance(item, dict):
             continue
         kind = str(item.get("type", "")).strip().lower().replace("-", "_")
-        if kind not in CATALOG:
-            log("outline", f"Model picked unknown component '{kind}', using key_points", "warn")
-            kind = "key_points"
+        if kind not in CATALOG or CATALOG[kind].hidden:
+            log("outline", f"Skipped '{kind}': not an animated diagram", "warn")
+            continue
         scenes.append({
             "type": kind,
             "title": str(item.get("title") or CATALOG[kind].name)[:64],
-            "goal": str(item.get("goal") or item.get("title") or "")[:300],
+            "goal": str(item.get("goal") or item.get("title") or "")[:400],
         })
     if not scenes:
-        raise LLMError("outline contained no scenes")
-    if scenes[0]["type"] != FIRST:
+        raise LLMError("outline contained no animated scenes")
+    if not scenes or scenes[0]["type"] != FIRST:
         scenes.insert(0, {"type": FIRST, "title": str(data.get("title") or topic)[:64], "goal": f"Open the lesson on {topic}"})
-    if scenes[-1]["type"] != LAST:
-        scenes.append({"type": LAST, "title": "Recap", "goal": "Summarise the key takeaways"})
-    # Only one title / recap.
-    scenes = [s for i, s in enumerate(scenes) if s["type"] not in (FIRST, LAST) or i in (0, len(scenes) - 1)]
-    scenes = scenes[: n_hi + 2]
+    scenes = [s for i, s in enumerate(scenes) if s["type"] != FIRST or i == 0]
+    scenes = scenes[: n_hi + 1]
     outline = {
         "title": str(data.get("title") or topic)[:80],
         "subject": str(data.get("subject") or "general").lower(),
@@ -169,7 +167,9 @@ Field contracts (keys marked ? are optional; respect the ranges):
 {chr(10).join(schemas)}
 
 Return {{"scenes": [ ... ]}} with exactly {len(items)} object(s): only scene(s) {", ".join(str(i + 1) for i, _ in items)} above,
-in that order, each with its "type". Do not write any other scene of the lesson."""
+in that order, each with its "type". Do not write any other scene of the lesson.
+When a Goal describes changes to the setup, write them as "beats" (only the fields listed for beats);
+each beat's caption says what the viewer should notice as the diagram moves."""
 
 
 # numbers in a goal ("f = 10 cm", "30°"), but not labels like "2F" or "3D"
@@ -213,7 +213,9 @@ def _copied_example(scene: dict, planned: dict) -> str | None:
 
 def _polish(scene: dict) -> dict:
     scene["caption"] = _deslop(scene["caption"])
-    scene["notes"] = [_deslop(n) for n in scene.get("notes") or []]
+    scene.pop("notes", None)
+    for beat in scene.get("beats") or []:
+        beat["caption"] = _deslop(beat["caption"])
     return scene
 
 
@@ -246,13 +248,18 @@ def _kind(raw: dict) -> str:
 def _run_batch(llm: LLM, context: str, items: list[tuple[int, dict]], label: str,
                errors: dict[int, str] | None = None) -> tuple[dict[int, dict], dict[int, str]]:
     ids = [f"scene-{i}" for i, _ in items]
+    call = f"call:{label}"
+    node(call, "running", scenes=[i for i, _ in items], retry=bool(errors))
     for nid in ids:
-        node(nid, "running", detail="retry" if errors else "generating")
+        node(nid, "running", detail="retry" if errors else "generating", call=call)
     max_tokens = min(8000, 900 + 900 * len(items))
     try:
         data, meta = llm.json(SYSTEM, _batch_prompt(context, items, errors), task=label,
                               max_tokens=max_tokens, temperature=0.35)
     except LLMError as exc:
+        node(call, "failed", detail=str(exc)[:80])
+        for nid in ids:
+            node(nid, "warn", detail="call failed", call=call)
         return {}, {i: str(exc) for i, _ in items}
     raw_scenes = data.get("scenes")
     if not isinstance(raw_scenes, list):
@@ -282,6 +289,7 @@ def _run_batch(llm: LLM, context: str, items: list[tuple[int, dict]], label: str
             log(label, f"Scene {index + 1} ({planned['type']}) rejected: {exc}", "warn")
     log(label, f"{len(good)}/{len(items)} scenes valid via {meta['key']} in {meta['seconds']}s",
         "success" if not bad else "warn")
+    node(call, "done" if not bad else "warn", key=meta["key"], seconds=meta["seconds"], valid=len(good))
     return good, bad
 
 
@@ -315,14 +323,22 @@ def write_scenes(llm: LLM, outline: dict, brief: str, audience: str, parallel: i
                 failures.update(bad)
         for index, error in failures.items():
             plan = outline["scenes"][index]
-            log("repair", f"Scene {index + 1} ({plan['type']}) fell back to text: {error}", "warn")
-            results[index] = fallback_scene(plan["type"], plan["title"], plan["goal"])
-            node(f"scene-{index}", "fallback", detail="text fallback")
-        node("repair", "done", detail=f"{len(failures)} fallbacks" if failures else "all fixed")
+            log("repair", f"Scene {index + 1} ({plan['type']}) dropped after retry: {error}", "warn")
+            node(f"scene-{index}", "fallback", detail="dropped")
+        node("repair", "done", detail=f"{len(failures)} dropped" if failures else "all fixed")
     else:
         node("repair", "skipped", detail="nothing to repair")
 
-    return _drop_duplicates([results[i] for i in range(len(planned))])
+    node("assemble", "running")
+    scenes = _drop_duplicates([results[i] for i in range(len(planned)) if i in results])
+    merged = merge_runs(scenes)
+    beats = sum(len(sc.get("beats") or []) for sc in merged)
+    node("assemble", "done", detail=f"{len(merged)} scenes, {beats} beats", scenes=len(merged), beats=beats)
+    if len(merged) < len(scenes):
+        log("scenes", f"Joined {len(scenes) - len(merged)} repeated diagram(s) into continuous beats", "success")
+    if not any(sc["type"] != FIRST for sc in merged):
+        raise LLMError("no scene could be written")
+    return merged
 
 
 def _drop_duplicates(scenes: list[dict]) -> list[dict]:

@@ -1,7 +1,7 @@
 // Render one lesson to MP4 and report progress as JSON lines on stdout.
 // usage: node scripts/render-video.mjs props.json out.mp4 [concurrency]
 import { bundle } from "@remotion/bundler";
-import { renderMedia, selectComposition } from "@remotion/renderer";
+import { renderMedia, renderStill, selectComposition } from "@remotion/renderer";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -32,6 +32,27 @@ try {
       }
     },
   });
+  // poster: the first diagram once it has fully built, so every thumbnail shows real content
+  try {
+    const OVERLAP = 30;
+    const scenes = inputProps.scenes || [];
+    let at = 0, frame = Math.floor(composition.durationInFrames / 3);
+    for (let i = 0; i < scenes.length; i++) {
+      const s = scenes[i];
+      if (s.type !== "title") {
+        const intro = s.beats && s.beats.length ? s.beats[0].at : s.duration;
+        frame = at + Math.round(intro * 0.85);
+        break;
+      }
+      at += s.duration - OVERLAP;
+    }
+    await renderStill({
+      composition, serveUrl, inputProps, chromiumOptions, frame: Math.min(frame, composition.durationInFrames - 1),
+      output: path.join(path.dirname(outFile), "poster.jpg"), imageFormat: "jpeg", jpegQuality: 88,
+    });
+  } catch (e) {
+    say({ stage: "warn", message: "poster: " + String((e && e.message) || e).slice(0, 200) });
+  }
   say({ stage: "done", progress: 1, output: outFile });
   process.exit(0);
 } catch (e) {

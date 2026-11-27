@@ -148,6 +148,7 @@ def history(limit: int = 40) -> list[dict]:
             "seconds": data.get("seconds"), "elapsed": data.get("elapsed"), "model": data.get("model"),
             "chapters": data.get("chapters", []),
             "video": f"/media/{quote(folder)}/lesson.mp4" if video.exists() else None,
+            "poster": f"/media/{quote(folder)}/poster.jpg" if (video.parent / "poster.jpg").exists() else None,
             "created": run.stat().st_mtime,
         })
     return items
@@ -261,7 +262,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._file(target) if UI_DIR.resolve() in target.parents else self.send_error(404)
         if path.startswith("/media/"):
             target = (VIDEOS / path[7:]).resolve()
-            if VIDEOS.resolve() not in target.parents or target.suffix not in (".mp4", ".json"):
+            if VIDEOS.resolve() not in target.parents or target.suffix not in (".mp4", ".json", ".jpg"):
                 return self.send_error(404)
             return self._file(target)
         if path == "/api/config":
@@ -269,8 +270,8 @@ class Handler(BaseHTTPRequestHandler):
             for name, spec in CATALOG.items():
                 subjects.setdefault(spec.subject, []).append(name)
             return self._json({
-                "models": [{"id": k, "label": v["label"], "default": k == DEFAULT_MODEL} for k, v in MODELS.items()],
-                "components": {k: len(v) for k, v in subjects.items()}, "total_components": len(CATALOG),
+                "models": [{"id": k, "label": v["label"], "note": v.get("note", ""), "default": k == DEFAULT_MODEL} for k, v in MODELS.items()],
+                "components": {k: len(v) for k, v in subjects.items()}, "total_components": sum(not s.hidden for s in CATALOG.values()),
             })
         if path == "/api/keys":
             return self._json(KEY_STATE)

@@ -25,16 +25,19 @@ MODELS = {
     "nemotron-ultra": {
         "id": "nvidia/nemotron-3-ultra-550b-a55b",
         "label": "Nemotron 3 Ultra",
+        "note": "Most reliable diagrams. Recommended.",
         "extra": {"chat_template_kwargs": {"enable_thinking": False}},
     },
     "kimi": {
         "id": "moonshotai/kimi-k3.1-pro",
         "label": "Kimi K3.1 Pro",
+        "note": "Careful reasoning, slower.",
         "extra": {},
     },
     "nemotron-lightning": {
         "id": "nvidia/nemotron-3.5-lightning-30b-a3b",
         "label": "Nemotron 3.5 Lightning",
+        "note": "Fastest drafts.",
         "extra": {},
     },
 }

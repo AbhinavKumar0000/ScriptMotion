@@ -27,20 +27,29 @@ export const Projectile: React.FC<SceneProps> = ({ s, dur, box }) => {
   const th = (s.angle_deg * Math.PI) / 180;
   const vx = v * Math.cos(th), vy = v * Math.sin(th);
   const T = (2 * vy) / g, R = vx * T, Hm = (vy * vy) / (2 * g);
-  const pl = plane(-R * 0.04, R * 1.12, 0, Math.max(Hm * 1.45, R * 0.22), { left: 40, top: 30, width: box.w - 80, height: box.h - 80 }, true);
+  // axes fit every beat state up front, so the arc reshapes inside a steady frame
+  const fit = ((s.__states as any[]) || [s]).map((st) => {
+    const a = (st.angle_deg * Math.PI) / 180, T2 = (2 * st.speed * Math.sin(a)) / st.g;
+    return { R: st.speed * Math.cos(a) * T2, H: (st.speed * Math.sin(a)) ** 2 / (2 * st.g) };
+  });
+  const Rf = Math.max(R, ...fit.map((q) => q.R)), Hf = Math.max(Hm, ...fit.map((q) => q.H));
+  const pl = plane(-Rf * 0.04, Rf * 1.12, 0, Math.max(Hf * 1.45, Rf * 0.22), { left: 40, top: 30, width: box.w - 420, height: box.h - 80 }, true);
   const ph = phases(dur, [0.8, 3, 1]);
   const pAx = prog(frame, ph[0].start, ph[0].len);
-  const tt = lin(frame, ph[1].start, ph[1].len) * T;
+  // after a beat changes the launch, fly again along the new arc
+  const relaunch = typeof s.__since === "number";
+  const tt = relaunch ? lin(s.__since, 0, Math.min(ph[1].len, 75)) * T : lin(frame, ph[1].start, ph[1].len) * T;
   const pos = (t: number) => ({ x: vx * t, y: vy * t - 0.5 * g * t * t });
   const trail: Pt[] = [];
-  for (let i = 0; i <= 120; i++) { const t = (tt * i) / 120; const p = pos(t); trail.push({ x: pl.sx(p.x), y: pl.sy(p.y) }); }
+  const tTrail = relaunch ? T : tt; // the arc stays drawn; the ball retraces it
+  for (let i = 0; i <= 120; i++) { const t = (tTrail * i) / 120; const p = pos(t); trail.push({ x: pl.sx(p.x), y: pl.sy(p.y) }); }
   const b = pos(tt);
   const bp = { x: pl.sx(b.x), y: pl.sy(b.y) };
   const sc = (Math.min(box.w, box.h) * 0.2) / v;
   const vyNow = vy - g * tt;
   const flying = tt > 0 && tt < T;
   // ghost dots every T/8 to show equal horizontal spacing
-  const ghosts = Array.from({ length: 9 }, (_, i) => (T * i) / 8).filter((t) => t <= tt);
+  const ghosts = Array.from({ length: 9 }, (_, i) => (T * i) / 8).filter((t) => t <= tTrail);
   const apex = pos(T / 2);
   return (
     <div style={{ position: "relative", width: box.w, height: box.h }}>
@@ -48,8 +57,8 @@ export const Projectile: React.FC<SceneProps> = ({ s, dur, box }) => {
         <Axes pl={pl} opacity={pAx} xLabel="x (m)" yLabel="y (m)" grid />
         <path d={pathOf(trail)} stroke={C.light} strokeWidth={3} fill="none" strokeDasharray="2 8" strokeLinecap="round" />
         {ghosts.map((t, i) => { const q = pos(t); return <circle key={i} cx={pl.sx(q.x)} cy={pl.sy(q.y)} r={6} fill={C.light} opacity={0.45} />; })}
-        {tt >= T / 2 ? (
-          <g opacity={prog(frame, ph[1].start + ph[1].len / 2, 12)}>
+        {tTrail >= T / 2 ? (
+          <g opacity={relaunch ? 1 : prog(frame, ph[1].start + ph[1].len / 2, 12)}>
             <line x1={pl.sx(apex.x)} x2={pl.sx(apex.x)} y1={pl.sy(apex.y)} y2={pl.sy(0)} stroke={C.muted} strokeWidth={2} strokeDasharray="6 6" />
             <Label x={pl.sx(apex.x) + 14} y={pl.sy(apex.y / 2)} anchor="start" size={24} color={C.muted}>H</Label>
             <Label x={pl.sx(apex.x)} y={pl.sy(apex.y) - 30} size={22} color={C.green}>vᵧ = 0</Label>
@@ -66,7 +75,7 @@ export const Projectile: React.FC<SceneProps> = ({ s, dur, box }) => {
         ) : null}
         {tt <= 0 ? <Arrow from={{ x: pl.sx(0), y: pl.sy(0) }} to={{ x: pl.sx(0) + vx * sc, y: pl.sy(0) - vy * sc }} color={C.blue} width={4} head={16} opacity={pAx} /> : null}
         <circle cx={bp.x} cy={bp.y} r={13} fill={C.ink} opacity={pAx} />
-        {tt >= T ? <Label x={pl.sx(R)} y={pl.sy(0) - 34} size={24} color={C.light}>R</Label> : null}
+        {tTrail >= T ? <Label x={pl.sx(R)} y={pl.sy(0) - 34} size={24} color={C.light}>R</Label> : null}
       </svg>
       <Readout right p={prog(frame, ph[2].start, 16)} rows={[["u", `${fmt(v, 1)} m/s at ${fmt(s.angle_deg, 0)}°`], ["Range R", `${fmt(R, 1)} m`], ["Max height H", `${fmt(Hm, 1)} m`], ["Time of flight", `${fmt(T, 2)} s`]]} />
     </div>

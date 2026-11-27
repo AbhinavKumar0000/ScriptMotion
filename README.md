@@ -6,11 +6,6 @@ Language models never write code or draw anything. A model picks components from
 
 ## Quick start
 
-```bash
-pip install -r requirements.txt
-cd remotion_project && npm install && cd ..
-```
-
 Add NVIDIA API keys to `.env`. One key works; more keys run in parallel and fail over to each other:
 
 ```
@@ -18,11 +13,14 @@ NVIDIA_API_KEY_1=nvapi-...
 NVIDIA_API_KEY_2=nvapi-...
 ```
 
-Open the studio:
+Then start everything with one command:
 
 ```bash
-python app.py
+python start_server.py
 ```
+
+It installs any missing Python packages and the Remotion renderer on first run, checks the keys,
+starts the studio on http://localhost:8000 and opens it in your browser (`--port 8080`, `--no-browser`).
 
 Or run from the command line:
 

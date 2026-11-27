@@ -1,20 +1,19 @@
-"""
-ScriptMotion: Model-Agnostic Agentic Orchestration for Declarative Motion Graphics Compilation
+"""ScriptMotion studio: local web UI for generating lesson videos.
 
-Run:
-    python app.py
+    python app.py            # http://127.0.0.1:8000
+    python app.py --port 9000 --no-browser
 
-The process serves the dark UI, runs the ScriptMotion pipeline in a
-background thread, streams logs over SSE, and serves the finished MP4 with
-HTTP Range support so the browser can seek.
+The server runs main.py as a subprocess with SM_EVENTS=1 and turns its
+structured event lines into a Server-Sent-Events stream that drives the
+pipeline graph, key panel and log table in ui/index.html.
 """
+
+from __future__ import annotations
 
 import argparse
 import json
 import mimetypes
 import os
-import queue
-import re
 import subprocess
 import sys
 import threading
@@ -24,607 +23,146 @@ import webbrowser
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Iterator
 from urllib.parse import quote, unquote, urlparse
+
+from src.catalog import CATALOG
+from src.events import PREFIX
+from src.llm.client import DEFAULT_MODEL, MODELS
+from src.llm.keypool import KeyPool
 
 ROOT = Path(__file__).resolve().parent
 UI_DIR = ROOT / "ui"
-OUTPUT_DIR = ROOT / "output"
-RUNS_DIR = ROOT / ".runs"
-
+VIDEOS = ROOT / "output" / "videos"
 HOST = "127.0.0.1"
-DEFAULT_PORT = 8000
-ANSI_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
-PROGRESS_RE = re.compile(
-    r"(?:Rendered|Encoded|Rendering)\s+(\d+)\s*/\s*(\d+)",
-    re.IGNORECASE,
-)
-BOX_CHARS = "┌┐└┘├┤┬┴┼─│╭╮╰╯╔╗╚╝╠╣╦╩╬═║"
-PROVIDERS = {"gemini", "claude", "nvidia"}
 
 
-def strip_ansi(text: str) -> str:
-    return ANSI_RE.sub("", text)
-
-
-def clean_log_line(text: str) -> str:
-    line = strip_ansi(text).strip()
-    return line.strip(BOX_CHARS + " ").strip()
-
-
-def classify_level(line: str) -> str:
-    lower = line.lower()
-    if "[fail]" in lower or "traceback" in lower or "error:" in lower or "failed" in lower:
-        return "error"
-    if "[warn]" in lower or "warning" in lower:
-        return "warn"
-    if "[ok]" in lower or "success" in lower or "complete" in lower or "done!" in lower:
-        return "success"
-    if line.startswith(">>") or line.startswith("$ "):
-        return "step"
-    return "info"
-
-
-def classify_stage(line: str, current: str) -> str:
-    lower = line.lower()
-    if "calling" in lower:
-        return "Generating component"
-    if "component written" in lower:
-        return "Validating TypeScript"
-    if "typescript validation passed" in lower:
-        return "Rendering video"
-    if "rendering video with remotion" in lower:
-        return "Rendering video"
-    if "video rendered successfully" in lower:
-        return "Finalizing"
-    if "done!" in lower:
-        return "Done"
-    return current
-
-
-def parse_progress(line: str) -> float | None:
-    match = PROGRESS_RE.search(line)
-    if not match:
-        return None
-    current, total = int(match.group(1)), int(match.group(2))
-    if total <= 0:
-        return None
-    return max(0.0, min(1.0, current / total))
-
-
-def iter_output(stream) -> Iterator[str]:
-    """Yield lines on both \\n and \\r so Remotion's progress bar streams live."""
-    buffer: list[str] = []
-    while True:
-        char = stream.read(1)
-        if char == "":
-            if buffer:
-                yield "".join(buffer)
-            return
-        if char in ("\r", "\n"):
-            if buffer:
-                yield "".join(buffer)
-                buffer = []
-        else:
-            buffer.append(char)
-
-
-def newest_video_after(started_at: float) -> str | None:
-    if not OUTPUT_DIR.exists():
-        return None
-    candidates: list[tuple[float, Path]] = []
-    for path in OUTPUT_DIR.glob("*.mp4"):
-        try:
-            stat = path.stat()
-        except OSError:
-            continue
-        if stat.st_mtime >= started_at - 5:
-            candidates.append((stat.st_mtime, path))
-    if not candidates:
-        return None
-    _, path = max(candidates, key=lambda item: item[0])
-    return path.relative_to(ROOT).as_posix()
-
-
-def list_history(limit: int = 30) -> list[dict]:
-    if not OUTPUT_DIR.exists():
-        return []
-    items: list[dict] = []
-    for path in OUTPUT_DIR.glob("*.mp4"):
-        try:
-            stat = path.stat()
-        except OSError:
-            continue
-        items.append({
-            "name": path.name,
-            "url": f"/output/{quote(path.name)}",
-            "size": stat.st_size,
-            "mtime": stat.st_mtime,
-        })
-    items.sort(key=lambda item: item["mtime"], reverse=True)
-    return items[:limit]
-
-
-def open_output_folder() -> None:
-    OUTPUT_DIR.mkdir(exist_ok=True)
-    if os.name == "nt":
-        os.startfile(str(OUTPUT_DIR))  # type: ignore[attr-defined]
-    elif sys.platform == "darwin":
-        subprocess.Popen(["open", str(OUTPUT_DIR)])
-    else:
-        subprocess.Popen(["xdg-open", str(OUTPUT_DIR)])
-
-
+# ===================================================================== jobs
 @dataclass
 class Job:
     id: str
-    topic: str
-    provider: str
-    instructions: str
-    concurrency: int
-    duration: int = DEFAULT_DURATION
-    audience: str = "beginner"
-    status: str = "queued"
-    stage: str = "Queued"
-    progress: float = 0.0
-    video: str | None = None
-    error: str | None = None
-    started_at: float = field(default_factory=time.time)
-    finished_at: float | None = None
+    request: dict
+    status: str = "running"  # running | done | failed | cancelled
+    started: float = field(default_factory=time.time)
     events: list[dict] = field(default_factory=list)
-    subscribers: list[queue.Queue] = field(default_factory=list)
-    seq: int = 0
-    process: subprocess.Popen | None = None
-    lock: threading.Lock = field(default_factory=threading.Lock)
+    result: dict | None = None
+    proc: subprocess.Popen | None = None
+    cond: threading.Condition = field(default_factory=threading.Condition)
 
-    def emit(self, event_type: str, **payload) -> None:
-        with self.lock:
-            self.seq += 1
-            event = {
-                "seq": self.seq,
-                "type": event_type,
-                "ts": time.time(),
-                **payload,
-            }
+    def push(self, event: dict) -> None:
+        with self.cond:
             self.events.append(event)
-            if len(self.events) > 4000:
-                del self.events[:1000]
-            subscribers = list(self.subscribers)
-        for subscriber in subscribers:
-            subscriber.put_nowait(event)
+            self.cond.notify_all()
 
-    def subscribe(self) -> tuple[queue.Queue, list[dict], bool]:
-        subscriber: queue.Queue = queue.Queue()
-        with self.lock:
-            replay = list(self.events)
-            finished = self.status in ("done", "failed", "stopped")
-            if not finished:
-                self.subscribers.append(subscriber)
-        return subscriber, replay, finished
-
-    def unsubscribe(self, subscriber: queue.Queue) -> None:
-        with self.lock:
-            if subscriber in self.subscribers:
-                self.subscribers.remove(subscriber)
-
-    def close_subscribers(self) -> None:
-        with self.lock:
-            subscribers = list(self.subscribers)
-            self.subscribers.clear()
-        for subscriber in subscribers:
-            subscriber.put_nowait(None)
+    def summary(self) -> dict:
+        return {"id": self.id, "status": self.status, "request": self.request, "started": self.started,
+                "result": self.result, "events": len(self.events)}
 
 
-class JobManager:
-    def __init__(self) -> None:
-        self.jobs: dict[str, Job] = {}
-        self.active_id: str | None = None
-        self.lock = threading.Lock()
+JOBS: dict[str, Job] = {}
+JOBS_LOCK = threading.Lock()
+KEY_STATE: dict = {"checked": 0.0, "keys": [], "error": ""}
 
-    def create(
-        self,
-        topic: str,
-        provider: str,
-        instructions: str,
-        concurrency: int,
-        duration: int = DEFAULT_DURATION,
-        audience: str = "beginner",
-    ) -> Job:
-        with self.lock:
-            if self.active_id:
-                active = self.jobs.get(self.active_id)
-                if active and active.status in ("queued", "running"):
-                    raise RuntimeError("A build is already running. Wait for it to finish or stop it.")
-            job = Job(
-                id=uuid.uuid4().hex[:12],
-                topic=topic,
-                provider=provider,
-                instructions=instructions,
-                concurrency=concurrency,
-                duration=duration,
-                audience=audience,
-            )
-            self.jobs[job.id] = job
-            self.active_id = job.id
-            if len(self.jobs) > 50:
-                for key in list(self.jobs.keys())[:-50]:
-                    if key != self.active_id:
-                        self.jobs.pop(key, None)
-            return job
 
-    def run(self, job: Job) -> None:
-        threading.Thread(target=self._run_job, args=(job,), daemon=True).start()
+def active_job() -> Job | None:
+    with JOBS_LOCK:
+        return next((j for j in JOBS.values() if j.status == "running"), None)
 
-    def _clear_active(self, job: Job) -> None:
-        with self.lock:
-            if self.active_id == job.id:
-                self.active_id = None
 
-    def stop(self, job_id: str) -> bool:
-        with self.lock:
-            job = self.jobs.get(job_id)
-        if not job or not job.process or job.process.poll() is not None:
-            return False
-        job.status = "stopped"
-        job.stage = "Stopped"
-        job.emit("status", status=job.status, stage=job.stage)
-        if os.name == "nt":
-            subprocess.run(
-                ["taskkill", "/PID", str(job.process.pid), "/T", "/F"],
-                capture_output=True,
-            )
-        else:
-            job.process.terminate()
-        return True
-
-    def _run_job(self, job: Job) -> None:
-        job.status = "running"
-        job.stage = "Starting"
-        job.emit("status", status=job.status, stage=job.stage, progress=job.progress)
-
-        RUNS_DIR.mkdir(exist_ok=True)
-        result_path = RUNS_DIR / f"{job.id}.json"
-        result_path.unlink(missing_ok=True)
-        job.emit(
-            "log",
-            level="info",
-            message="Launching pipeline process...",
-            stage=job.stage,
-        )
-
-        cmd = [
-            sys.executable,
-            "-u",
-            str(ROOT / "main.py"),
-            job.topic,
-            "--provider",
-            job.provider,
-            "--concurrency",
-            str(job.concurrency),
-            "--duration",
-            str(job.duration),
-            "--audience",
-            job.audience,
-            "--result-file",
-            str(result_path),
-        ]
-        if job.instructions:
-            cmd.extend(["--instructions", job.instructions])
-
-        env = os.environ.copy()
-        env["PYTHONUNBUFFERED"] = "1"
-        env["PYTHONIOENCODING"] = "utf-8"
-        env["COLUMNS"] = "200"
-        env["LINES"] = "60"
-        env.setdefault("NO_COLOR", "1")
-
-        try:
-            job.process = subprocess.Popen(
-                cmd,
-                cwd=str(ROOT),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                bufsize=1,
-                env=env,
-            )
-        except Exception as exc:  # noqa: BLE001
-            job.status = "failed"
-            job.stage = "Failed"
-            job.error = f"Could not start pipeline: {exc}"
-            job.emit("log", level="error", message=job.error, stage=job.stage)
-            job.emit("status", status=job.status, stage=job.stage, error=job.error)
-            job.finished_at = time.time()
-            job.close_subscribers()
-            self._clear_active(job)
-            return
-
-        assert job.process.stdout is not None
-        for raw_line in iter_output(job.process.stdout):
-            line = clean_log_line(raw_line)
-            if not line:
+def run_job(job: Job) -> None:
+    req = job.request
+    cmd = [sys.executable, "-u", str(ROOT / "main.py"), req["topic"],
+           "--duration", str(req["duration"]), "--model", req["model"], "--audience", req["audience"]]
+    if req.get("brief"):
+        cmd += ["--brief", req["brief"]]
+    env = {**os.environ, "SM_EVENTS": "1", "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
+    job.push({"type": "log", "stage": "server", "level": "info", "t": 0, "message": f"Job {job.id} started"})
+    try:
+        job.proc = subprocess.Popen(cmd, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    text=True, encoding="utf-8", errors="replace", bufsize=1)
+        assert job.proc.stdout is not None
+        for raw in job.proc.stdout:
+            line = raw.rstrip("\n")
+            if not line.strip():
                 continue
-            print(f"[{job.provider}] {line}", flush=True)
-
-            stage = classify_stage(line, job.stage)
-            if stage != job.stage:
-                job.stage = stage
-                job.emit(
-                    "status",
-                    status=job.status,
-                    stage=job.stage,
-                    progress=job.progress,
-                )
-
-            progress = parse_progress(line)
-            if progress is not None:
-                job.progress = progress
-                job.emit(
-                    "progress",
-                    progress=progress,
-                    stage=job.stage,
-                    message=line,
-                )
-
-            job.emit(
-                "log",
-                level=classify_level(line),
-                message=line,
-                stage=job.stage,
-            )
-
-        returncode = job.process.wait()
-
-        if job.status == "stopped":
-            job.finished_at = time.time()
-            job.emit("status", status=job.status, stage=job.stage, error=job.error)
-            job.close_subscribers()
-            self._clear_active(job)
-            return
-
-        result: dict | None = None
-        if result_path.exists():
-            try:
-                result = json.loads(result_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                result = None
-
-        if result and result.get("ok") and result.get("video"):
-            job.video = str(result["video"])
-            job.status = "done"
-            job.stage = "Done"
-            job.progress = 1.0
-            job.emit(
-                "status",
-                status=job.status,
-                stage=job.stage,
-                progress=1.0,
-                video=job.video,
-            )
-            job.emit(
-                "done",
-                video=job.video,
-                elapsed_seconds=result.get("elapsed_seconds"),
-            )
-        elif returncode == 0 and not result:
-            fallback = newest_video_after(job.started_at)
-            if fallback:
-                job.video = fallback
-                job.status = "done"
-                job.stage = "Done"
-                job.progress = 1.0
-                job.emit(
-                    "status",
-                    status=job.status,
-                    stage=job.stage,
-                    progress=1.0,
-                    video=job.video,
-                )
-                job.emit("done", video=job.video)
+            if line.startswith(PREFIX):
+                try:
+                    event = json.loads(line[len(PREFIX):])
+                except json.JSONDecodeError:
+                    continue
+                if event.get("type") == "result":
+                    job.result = event
+                if event.get("type") == "key":
+                    _merge_key(event)
+                job.push(event)
             else:
-                job.status = "failed"
-                job.stage = "Failed"
-                job.error = "Build finished but no MP4 was found in output/."
-                job.emit("log", level="error", message=job.error, stage=job.stage)
-                job.emit(
-                    "status",
-                    status=job.status,
-                    stage=job.stage,
-                    error=job.error,
-                )
-        else:
-            job.status = "failed"
-            job.stage = "Failed"
-            job.error = (result or {}).get("error") or "Build failed. Check the logs."
-            job.emit("log", level="error", message=job.error, stage=job.stage)
-            job.emit(
-                "status",
-                status=job.status,
-                stage=job.stage,
-                error=job.error,
-            )
-
-        job.finished_at = time.time()
-        job.close_subscribers()
-        self._clear_active(job)
+                job.push({"type": "log", "stage": "stderr", "level": "debug", "t": round(time.time() - job.started, 1),
+                          "message": line[:400]})
+        code = job.proc.wait()
+    except Exception as exc:  # noqa: BLE001
+        job.push({"type": "log", "stage": "server", "level": "error", "message": str(exc)})
+        code = 1
+    if job.status == "cancelled":
+        pass
+    elif code == 0 and job.result and job.result.get("ok"):
+        job.status = "done"
+    else:
+        job.status = "failed"
+        if not job.result:
+            job.result = {"ok": False, "error": f"pipeline exited with code {code}"}
+    job.push({"type": "status", "status": job.status, "result": job.result})
 
 
-def job_payload(job: Job) -> dict:
-    return {
-        "id": job.id,
-        "topic": job.topic,
-        "provider": job.provider,
-        "instructions": job.instructions,
-        "concurrency": job.concurrency,
-        "status": job.status,
-        "stage": job.stage,
-        "progress": job.progress,
-        "video": job.video,
-        "error": job.error,
-        "started_at": job.started_at,
-        "finished_at": job.finished_at,
-    }
+def _merge_key(event: dict) -> None:
+    keys = {k["name"]: k for k in KEY_STATE["keys"]}
+    data = {k: v for k, v in event.items() if k not in ("type", "t")}
+    keys[data["name"]] = {**keys.get(data["name"], {}), **data}
+    KEY_STATE["keys"] = sorted(keys.values(), key=lambda k: k["name"])
+    KEY_STATE["checked"] = time.time()
 
 
-manager = JobManager()
+def check_keys(model: str) -> dict:
+    try:
+        pool = KeyPool.from_env()
+        KEY_STATE["keys"] = pool.health_check(MODELS[model]["id"])
+        KEY_STATE["error"] = ""
+    except Exception as exc:  # noqa: BLE001
+        KEY_STATE["error"] = str(exc)
+    KEY_STATE["checked"] = time.time()
+    return KEY_STATE
 
 
+def history(limit: int = 40) -> list[dict]:
+    items = []
+    if not VIDEOS.exists():
+        return items
+    for run in sorted(VIDEOS.glob("*/run.json"), reverse=True)[:limit]:
+        try:
+            data = json.loads(run.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        folder = run.parent.name
+        video = run.parent / "lesson.mp4"
+        items.append({
+            "id": folder, "title": data.get("title"), "topic": data.get("topic"), "brief": data.get("brief", ""),
+            "subject": data.get("subject"), "chapter": data.get("chapter"), "level": data.get("level"),
+            "seconds": data.get("seconds"), "elapsed": data.get("elapsed"), "model": data.get("model"),
+            "chapters": data.get("chapters", []),
+            "video": f"/media/{quote(folder)}/lesson.mp4" if video.exists() else None,
+            "created": run.stat().st_mtime,
+        })
+    return items
+
+
+# =================================================================== server
 class Handler(BaseHTTPRequestHandler):
-    server_version = "ATGVideoStudio/1.0"
-    protocol_version = "HTTP/1.1"
+    server_version = "ScriptMotion/2"
 
-    def log_message(self, fmt, *args):  # noqa: A003 - silence request spam
-        return
+    def log_message(self, fmt: str, *args) -> None:  # quiet access log
+        pass
 
-    # ---------- GET ----------
-
-    def do_GET(self) -> None:  # noqa: N802
-        path = unquote(urlparse(self.path).path)
-
-        if path in ("/", "/index.html"):
-            self._serve_file(
-                UI_DIR / "index.html",
-                "text/html; charset=utf-8",
-            )
-            return
-
-        if path.startswith("/ui/"):
-            self._serve_static(path[len("/ui/"):])
-            return
-
-        if path.startswith("/output/"):
-            self._serve_video(path[len("/output/"):])
-            return
-
-        if path == "/api/history":
-            self._send_json(200, {"items": list_history()})
-            return
-
-        if path == "/api/health":
-            self._send_json(200, {"ok": True, "time": time.time()})
-            return
-
-        if path.startswith("/api/jobs/"):
-            parts = [part for part in path.split("/") if part]
-            # ["api", "jobs", "<id>", ...]
-            if len(parts) >= 3:
-                job = manager.jobs.get(parts[2])
-                if not job:
-                    self._send_json(404, {"error": "Job not found"})
-                    return
-                if len(parts) == 3:
-                    self._send_json(200, job_payload(job))
-                    return
-                if len(parts) == 4 and parts[3] == "events":
-                    self._stream_events(job)
-                    return
-            self._send_json(404, {"error": "Not found"})
-            return
-
-        self._send_json(404, {"error": "Not found"})
-
-    def do_HEAD(self) -> None:  # noqa: N802
-        path = unquote(urlparse(self.path).path)
-        if path.startswith("/output/"):
-            self._serve_video(path[len("/output/"):], head_only=True)
-            return
-        if path in ("/", "/index.html"):
-            self._serve_file(
-                UI_DIR / "index.html",
-                "text/html; charset=utf-8",
-                head_only=True,
-            )
-            return
-        self.send_error(404)
-
-    # ---------- POST ----------
-
-    def do_POST(self) -> None:  # noqa: N802
-        path = unquote(urlparse(self.path).path)
-
-        if path == "/api/build":
-            try:
-                body = self._read_json()
-            except (ValueError, json.JSONDecodeError):
-                self._send_json(400, {"error": "Invalid JSON body"})
-                return
-
-            topic = str(body.get("topic", "")).strip()
-            provider = str(body.get("provider", "gemini")).strip().lower()
-            instructions = str(body.get("instructions", "")).strip()
-            try:
-                concurrency = int(body.get("concurrency", 2))
-            except (TypeError, ValueError):
-                concurrency = 2
-            try:
-                duration = int(body.get("duration", DEFAULT_DURATION))
-            except (TypeError, ValueError):
-                duration = DEFAULT_DURATION
-            audience = str(body.get("audience", "beginner")).strip().lower()
-
-            if not topic:
-                self._send_json(400, {"error": "Topic is required"})
-                return
-            if len(topic) > 300:
-                self._send_json(400, {"error": "Topic is too long"})
-                return
-            if provider not in PROVIDERS:
-                self._send_json(400, {"error": "Unknown provider"})
-                return
-            if not 1 <= concurrency <= 8:
-                self._send_json(400, {"error": "Concurrency must be 1-8"})
-                return
-            if duration not in (30, 60, 90):
-                self._send_json(400, {"error": "Duration must be 30, 60, or 90"})
-                return
-            if audience not in ("beginner", "intermediate", "advanced"):
-                self._send_json(400, {"error": "Audience must be beginner, intermediate, or advanced"})
-                return
-
-            try:
-                job = manager.create(topic, provider, instructions, concurrency, duration, audience)
-            except RuntimeError as exc:
-                self._send_json(409, {"error": str(exc)})
-                return
-
-            manager.run(job)
-            self._send_json(202, {"job_id": job.id})
-            return
-
-        if path.startswith("/api/jobs/") and path.endswith("/stop"):
-            parts = [part for part in path.split("/") if part]
-            # ["api", "jobs", "<id>", "stop"]
-            if len(parts) == 4:
-                ok = manager.stop(parts[2])
-                self._send_json(200 if ok else 404, {"ok": ok})
-                return
-            self._send_json(404, {"error": "Job not found"})
-            return
-
-        if path == "/api/open-folder":
-            try:
-                open_output_folder()
-                self._send_json(200, {"ok": True})
-            except Exception as exc:  # noqa: BLE001
-                self._send_json(500, {"error": str(exc)})
-            return
-
-        self._send_json(404, {"error": "Not found"})
-
-    # ---------- helpers ----------
-
-    def _read_json(self) -> dict:
-        length = int(self.headers.get("Content-Length", "0") or "0")
-        raw = self.rfile.read(length) if length else b"{}"
-        value = json.loads(raw.decode("utf-8"))
-        if not isinstance(value, dict):
-            raise ValueError("Expected a JSON object")
-        return value
-
-    def _send_json(self, status: int, payload: dict) -> None:
-        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    # ------------------------------------------------------------- helpers
+    def _json(self, data, status: int = 200) -> None:
+        body = json.dumps(data, ensure_ascii=False, default=str).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -632,186 +170,186 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _serve_file(
-        self,
-        path: Path,
-        content_type: str,
-        head_only: bool = False,
-    ) -> None:
+    def _body(self) -> dict:
+        length = int(self.headers.get("Content-Length") or 0)
+        if not length:
+            return {}
+        try:
+            return json.loads(self.rfile.read(length).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            return {}
+
+    def _file(self, path: Path) -> None:
         if not path.is_file():
-            self._send_json(404, {"error": "Not found"})
+            self.send_error(404)
             return
-        data = path.read_bytes()
-        self.send_response(200)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(data)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        if not head_only:
-            self.wfile.write(data)
-
-    def _serve_static(self, relative: str) -> None:
-        target = (UI_DIR / relative).resolve()
-        if not target.is_relative_to(UI_DIR.resolve()) or not target.is_file():
-            self._send_json(404, {"error": "Not found"})
-            return
-        content_type, _ = mimetypes.guess_type(str(target))
-        self._serve_file(
-            target,
-            content_type or "application/octet-stream",
-        )
-
-    def _serve_video(self, filename: str, head_only: bool = False) -> None:
-        target = (OUTPUT_DIR / filename).resolve()
-        if not target.is_relative_to(OUTPUT_DIR.resolve()) or not target.is_file():
-            self._send_json(404, {"error": "Video not found"})
-            return
-
-        file_size = target.stat().st_size
-        range_header = self.headers.get("Range")
-        start, end = 0, file_size - 1
-        status = 200
-
-        if range_header:
-            match = re.match(r"bytes=(\d*)-(\d*)", range_header.strip())
-            if match:
-                if match.group(1):
-                    start = int(match.group(1))
-                if match.group(2):
-                    end = int(match.group(2))
-                if start >= file_size:
-                    self.send_response(416)
-                    self.send_header("Content-Range", f"bytes */{file_size}")
-                    self.send_header("Content-Length", "0")
-                    self.end_headers()
-                    return
-                end = min(end, file_size - 1)
+        size = path.stat().st_size
+        ctype = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        start, end, status = 0, size - 1, 200
+        rng = self.headers.get("Range")
+        if rng and rng.startswith("bytes="):
+            a, _, b = rng[6:].split(",")[0].partition("-")
+            try:
+                if a:
+                    start = int(a)
+                    end = int(b) if b else size - 1
+                else:
+                    start = max(0, size - int(b))
+                end = min(end, size - 1)
+                if start > end:
+                    raise ValueError
                 status = 206
-
-        length = end - start + 1
+            except ValueError:
+                self.send_response(416)
+                self.send_header("Content-Range", f"bytes */{size}")
+                self.end_headers()
+                return
         self.send_response(status)
-        self.send_header("Content-Type", "video/mp4")
+        self.send_header("Content-Type", ctype)
         self.send_header("Accept-Ranges", "bytes")
-        self.send_header("Content-Length", str(length))
+        self.send_header("Content-Length", str(end - start + 1))
         if status == 206:
-            self.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
-        self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
         self.end_headers()
+        try:
+            with path.open("rb") as fh:
+                fh.seek(start)
+                left = end - start + 1
+                while left > 0:
+                    chunk = fh.read(min(1 << 20, left))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    left -= len(chunk)
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            pass
 
-        if head_only:
-            return
-
-        with target.open("rb") as file:
-            file.seek(start)
-            remaining = length
-            while remaining > 0:
-                chunk = file.read(min(1024 * 256, remaining))
-                if not chunk:
-                    break
-                self.wfile.write(chunk)
-                remaining -= len(chunk)
-
-    def _write_sse(self, event: dict) -> None:
-        data = json.dumps(event, ensure_ascii=False)
-        self.wfile.write(f"data: {data}\n\n".encode("utf-8"))
-        self.wfile.flush()
-
-    def _stream_events(self, job: Job) -> None:
-        subscriber, replay, finished = job.subscribe()
-
+    def _sse(self, job: Job) -> None:
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
-        self.send_header("Cache-Control", "no-cache, no-transform")
+        self.send_header("Cache-Control", "no-store")
         self.send_header("Connection", "keep-alive")
-        self.send_header("X-Accel-Buffering", "no")
         self.end_headers()
-
+        sent = 0
         try:
-            self.wfile.write(b"retry: 1000\n\n")
-            self.wfile.flush()
-
-            for event in replay:
-                self._write_sse(event)
-
-            if finished:
-                self._write_sse({
-                    "seq": job.seq,
-                    "type": "end",
-                    "ts": time.time(),
-                    "status": job.status,
-                })
-                return
-
             while True:
-                try:
-                    event = subscriber.get(timeout=15)
-                except queue.Empty:
+                with job.cond:
+                    if sent >= len(job.events) and job.status == "running":
+                        job.cond.wait(timeout=15)
+                    batch = job.events[sent:]
+                if batch:
+                    for event in batch:
+                        self.wfile.write(f"data: {json.dumps(event, ensure_ascii=False, default=str)}\n\n".encode("utf-8"))
+                    sent += len(batch)
+                    self.wfile.flush()
+                elif job.status != "running":
+                    break
+                else:
                     self.wfile.write(b": ping\n\n")
                     self.wfile.flush()
-                    continue
-                if event is None:
-                    self._write_sse({
-                        "seq": job.seq,
-                        "type": "end",
-                        "ts": time.time(),
-                        "status": job.status,
-                    })
-                    break
-                self._write_sse(event)
-        except (BrokenPipeError, ConnectionResetError, OSError):
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
             pass
-        finally:
-            job.unsubscribe(subscriber)
-            self.close_connection = True
 
+    # -------------------------------------------------------------- routes
+    def do_GET(self) -> None:  # noqa: N802
+        url = urlparse(self.path)
+        path = unquote(url.path)
+        if path in ("/", "/index.html"):
+            return self._file(UI_DIR / "index.html")
+        if path.startswith("/ui/"):
+            target = (UI_DIR / path[4:]).resolve()
+            return self._file(target) if UI_DIR.resolve() in target.parents else self.send_error(404)
+        if path.startswith("/media/"):
+            target = (VIDEOS / path[7:]).resolve()
+            if VIDEOS.resolve() not in target.parents or target.suffix not in (".mp4", ".json"):
+                return self.send_error(404)
+            return self._file(target)
+        if path == "/api/config":
+            subjects: dict[str, list[str]] = {}
+            for name, spec in CATALOG.items():
+                subjects.setdefault(spec.subject, []).append(name)
+            return self._json({
+                "models": [{"id": k, "label": v["label"], "default": k == DEFAULT_MODEL} for k, v in MODELS.items()],
+                "components": {k: len(v) for k, v in subjects.items()}, "total_components": len(CATALOG),
+            })
+        if path == "/api/keys":
+            return self._json(KEY_STATE)
+        if path == "/api/history":
+            return self._json(history())
+        if path == "/api/active":
+            job = active_job()
+            return self._json(job.summary() if job else None)
+        if path.startswith("/api/jobs/"):
+            parts = path.split("/")
+            job = JOBS.get(parts[3]) if len(parts) > 3 else None
+            if not job:
+                return self._json({"error": "unknown job"}, 404)
+            if len(parts) > 4 and parts[4] == "events":
+                return self._sse(job)
+            return self._json(job.summary())
+        self.send_error(404)
 
-def print_banner(url: str) -> None:
-    print("")
-    print("  +------------------------------------------+")
-    print("  |            ATG VIDEO STUDIO              |")
-    print("  +------------------------------------------+")
-    print(f"  UI:        {url}")
-    print("  Providers: Gemini / Claude / NVIDIA Nemotron")
-    print("  Logs:      live in the UI and this terminal")
-    print("  Stop:      Ctrl+C")
-    print("")
+    def do_POST(self) -> None:  # noqa: N802
+        path = urlparse(self.path).path
+        body = self._body()
+        if path == "/api/keys/check":
+            model = body.get("model") if body.get("model") in MODELS else DEFAULT_MODEL
+            return self._json(check_keys(model))
+        if path == "/api/build":
+            topic = str(body.get("topic") or "").strip()
+            if len(topic) < 3:
+                return self._json({"error": "Enter a topic (at least 3 characters)."}, 400)
+            if active_job():
+                return self._json({"error": "A lesson is already being generated. Wait for it to finish."}, 409)
+            req = {
+                "topic": topic[:200],
+                "brief": str(body.get("brief") or "").strip()[:1500],
+                "audience": str(body.get("audience") or "Class 10 student")[:60],
+                "duration": max(30, min(300, int(body.get("duration") or 90))),
+                "model": body.get("model") if body.get("model") in MODELS else DEFAULT_MODEL,
+            }
+            job = Job(id=uuid.uuid4().hex[:10], request=req)
+            with JOBS_LOCK:
+                JOBS[job.id] = job
+            threading.Thread(target=run_job, args=(job,), daemon=True).start()
+            return self._json(job.summary(), 201)
+        if path.startswith("/api/jobs/") and path.endswith("/cancel"):
+            job = JOBS.get(path.split("/")[3])
+            if not job or job.status != "running":
+                return self._json({"error": "job is not running"}, 400)
+            job.status = "cancelled"
+            if job.proc and job.proc.poll() is None:
+                if os.name == "nt":
+                    subprocess.run(["taskkill", "/F", "/T", "/PID", str(job.proc.pid)], capture_output=True)
+                else:
+                    job.proc.kill()
+            job.push({"type": "log", "stage": "server", "level": "warn", "message": "Cancelled by user"})
+            return self._json(job.summary())
+        self.send_error(404)
 
 
 def main() -> int:
-    try:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:  # noqa: BLE001
-        pass
-
-    parser = argparse.ArgumentParser(description="ScriptMotion local UI")
-    parser.add_argument("--port", type=int, default=DEFAULT_PORT)
-    parser.add_argument("--no-browser", action="store_true")
-    args = parser.parse_args()
-
-    server: ThreadingHTTPServer | None = None
-    for port in range(args.port, args.port + 10):
+    ap = argparse.ArgumentParser(description="ScriptMotion studio")
+    ap.add_argument("--port", type=int, default=8000)
+    ap.add_argument("--no-browser", action="store_true")
+    args = ap.parse_args()
+    for stream in (sys.stdout, sys.stderr):
         try:
-            server = ThreadingHTTPServer((HOST, port), Handler)
-            break
-        except OSError:
-            continue
-
-    if server is None:
-        print(f"Could not bind to {HOST}:{args.port}-{args.port + 9}.")
-        return 1
-
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+    mimetypes.add_type("video/mp4", ".mp4")
+    server = ThreadingHTTPServer((HOST, args.port), Handler)
     server.daemon_threads = True
-    url = f"http://{HOST}:{server.server_port}"
-    print_banner(url)
-
+    url = f"http://{HOST}:{args.port}"
+    print(f"ScriptMotion studio running at {url}  (Ctrl+C to stop)")
+    threading.Thread(target=check_keys, args=(DEFAULT_MODEL,), daemon=True).start()
     if not args.no_browser:
-        threading.Timer(0.7, lambda: webbrowser.open(url)).start()
-
+        threading.Timer(0.8, lambda: webbrowser.open(url)).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nShutting down...")
+        pass
     finally:
         server.server_close()
     return 0

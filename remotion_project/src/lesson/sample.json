@@ -1,0 +1,64 @@
+{
+ "meta": {
+  "title": "Component library",
+  "subject": "physics",
+  "chapter": "Ray optics",
+  "level": "Class 10"
+ },
+ "scenes": [
+  {
+   "type": "matrix_transform",
+   "title": "A shear transformation",
+   "caption": "Columns of the matrix are where î and ĵ land.",
+   "notes": [
+    "Observe how the diagram is built",
+    "Values are computed, not typed"
+   ],
+   "matrix": [
+    [
+     1.0,
+     1.0
+    ],
+    [
+     0.0,
+     1.0
+    ]
+   ],
+   "vector": [
+    1.0,
+    2.0
+   ],
+   "duration": 270
+  },
+  {
+   "type": "matrix_multiply",
+   "title": "Multiplying two matrices",
+   "caption": "Each entry is a row of A dotted with a column of B.",
+   "notes": [
+    "Observe how the diagram is built",
+    "Values are computed, not typed"
+   ],
+   "A": [
+    [
+     1.0,
+     2.0
+    ],
+    [
+     3.0,
+     4.0
+    ]
+   ],
+   "B": [
+    [
+     5.0,
+     6.0
+    ],
+    [
+     7.0,
+     8.0
+    ]
+   ],
+   "duration": 354
+  }
+ ]
+}

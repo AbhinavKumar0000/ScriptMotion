@@ -1,500 +1,193 @@
-"""
-ScriptMotion: Model-Agnostic Agentic Orchestration for Declarative Motion Graphics Compilation
+"""ScriptMotion: turn a topic (plus an optional teacher's brief) into an animated lesson video.
 
-Script-first flow:
-  1. Classify topic
-  2. Generate teaching script (narration + visual beats) via LLM
-  3. Generate Remotion component from script context via LLM
-  4. Validate TypeScript (tsc + QA gate)
-  5. Render MP4 via Remotion
+Pipeline
+  keys      ping every NVIDIA key in parallel; unhealthy keys are skipped
+  outline   one call: lesson structure, chosen from the pre-built component library
+  scenes    scene data written in parallel batches across healthy keys
+  repair    invalid scenes are re-asked with their validation error, then fall back to text
+  validate  every formula is compiled with KaTeX; timings are derived from content
+  render    Remotion renders the declarative storyboard to MP4
+
+The model only chooses components and fills their data. All geometry, physics and
+layout are computed by the components, so output quality does not depend on the model.
+
+Usage
+  python main.py "Refraction through a glass slab" --brief "Class 10, focus on Snell's law" --duration 90
+  python main.py "Matrix multiplication" --model kimi --out output/videos
 """
+
+from __future__ import annotations
 
 import argparse
-from dataclasses import asdict
-import asyncio
 import json
+import os
+import re
+import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
-from rich.console import Console
-from rich.panel import Panel
+from src.events import emit, log, node
+from src.llm.client import DEFAULT_MODEL, LLM, MODELS, LLMError
+from src.llm.keypool import KeyPool
+from src.planner import check_tex, plan_outline, write_scenes
+from src.storyboard import FPS, OVERLAP, scene_starts, time_storyboard
 
-from src.component_writer import write_component
-from src.errors import PipelineError
-from src.pipeline.adaptivePipeline import PipelineContext, runPipeline
-from src.prompt_builder import build_script_prompt, build_user_message, build_system_prompt
-from src.providers import ProviderRegistry, providerRegistry, GeminiProvider, ClaudeProvider, NVIDIAProvider
-from src.renderer import render_video
-from src.script_generator import script_to_context, TeachingScript, VisualBeat, BeatType
-from src.topic_classifier import classify_topic as classifyTopic
-from src.validator import validate_component
-from src.video_spec import VideoSpec
-
-console = Console(force_terminal=True, highlight=False)
-MAX_RETRIES = 2
-
-PROVIDER_LABELS = {
-    "gemini": "Gemini",
-    "claude": "Claude",
-    "nvidia": "NVIDIA Nemotron",
-}
-
-DEFAULT_DURATION = 60
+ROOT = Path(__file__).resolve().parent
+REMOTION = ROOT / "remotion_project"
+VIDEOS = ROOT / "output" / "videos"
 
 
-def _write_result(path: str, payload: dict) -> None:
-    result_path = Path(path)
-    result_path.parent.mkdir(parents=True, exist_ok=True)
-    result_path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+def slugify(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:48] or "lesson"
 
 
-def _initialize_providers(registry: ProviderRegistry) -> None:
-    registry.register(GeminiProvider())
-    registry.register(ClaudeProvider())
-    registry.register(NVIDIAProvider())
+def render(props_file: Path, out_file: Path, concurrency: int | None) -> None:
+    cmd = ["node", "scripts/render-video.mjs", str(props_file), str(out_file)]
+    if concurrency:
+        cmd.append(str(concurrency))
+    node("render", "running", detail="bundling")
+    proc = subprocess.Popen(cmd, cwd=REMOTION, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            text=True, encoding="utf-8", errors="replace", shell=sys.platform == "win32")
+    error = ""
+    last_logged = -10
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            msg = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        stage, p = msg.get("stage"), float(msg.get("progress") or 0)
+        if stage == "bundle":
+            emit("progress", stage="bundle", value=round(p, 3))
+        elif stage == "render":
+            emit("progress", stage="render", value=round(p, 3), frames=msg.get("frames"), rendered=msg.get("rendered"))
+            pct = int(p * 100)
+            if msg.get("frames"):
+                log("render", f"Rendering {msg['frames']} frames ({msg['frames'] / FPS:.0f}s of video)")
+            elif pct >= last_logged + 10:
+                last_logged = pct - pct % 10
+                node("render", "running", detail=f"{pct}%")
+                log("render", f"{pct}% rendered")
+        elif stage == "error":
+            error = msg.get("message", "render failed")
+    proc.wait()
+    if proc.returncode != 0:
+        stderr = (proc.stderr.read() if proc.stderr else "")[-600:]
+        raise RuntimeError(error or stderr.strip() or f"renderer exited with {proc.returncode}")
 
 
-async def _initialize_provider(registry: ProviderRegistry, provider_name: str) -> None:
-    provider = registry.get(provider_name)
-    if not provider:
-        raise PipelineError(f"Unknown provider: {provider_name}")
+def build(topic: str, brief: str, audience: str, seconds: int, model: str,
+          concurrency: int | None, out_dir: Path, skip_render: bool = False) -> dict:
+    started = time.time()
+    run_dir = out_dir / f"{datetime.now():%Y%m%d-%H%M%S}-{slugify(topic)}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    os.environ["SM_TRACE_DIR"] = str(run_dir / "trace")
+    emit("run", topic=topic, brief=brief, audience=audience, seconds=seconds, model=model, dir=str(run_dir))
 
-    import os
-    from dotenv import load_dotenv
-    load_dotenv()
+    # 1. keys -------------------------------------------------------------
+    node("keys", "running", detail="checking keys")
+    pool = KeyPool.from_env()
+    log("keys", f"Checking {len(pool.slots)} NVIDIA keys in parallel")
+    pool.health_check(MODELS[model]["id"])
+    healthy = pool.healthy_count
+    for slot in pool.slots:
+        state = f"ok in {slot.latency}s" if slot.healthy and not slot.last_error else (slot.last_error or "ok")
+        log("keys", f"{slot.name} (…{slot.key[-4:]}): {state}", "success" if slot.healthy else "error")
+    if not healthy:
+        node("keys", "failed", detail="no working keys")
+        raise RuntimeError("No NVIDIA key passed the health check. Check .env")
+    node("keys", "done", detail=f"{healthy}/{len(pool.slots)} healthy")
+    llm = LLM(pool, model)
 
-    api_key_map = {
-        "gemini": os.getenv("GEMINI_API_KEY"),
-        "claude": os.getenv("ANTHROPIC_API_KEY"),
-        "nvidia": os.getenv("NVIDIA_API_KEY"),
-    }
+    # 2. outline ----------------------------------------------------------
+    outline = plan_outline(llm, topic, brief, audience, seconds)
+    emit("outline", title=outline["title"], subject=outline["subject"], chapter=outline["chapter"],
+         scenes=[{"index": i, "type": s["type"], "title": s["title"]} for i, s in enumerate(outline["scenes"])])
 
-    api_key = api_key_map.get(provider_name)
-    if not api_key:
-        raise PipelineError(f"API key not found for {provider_name}. Set {provider_name.upper()}_API_KEY in .env")
+    # 3-4. scenes + repair --------------------------------------------------
+    node("scenes", "running", detail=f"{len(outline['scenes'])} scenes")
+    scenes = write_scenes(llm, outline, brief, audience, parallel=healthy)
+    node("scenes", "done", detail=f"{len(scenes)} scenes")
 
-    model_map = {
-        "gemini": "gemini-2.5-pro",
-        "claude": "claude-sonnet-4-6",
-        "nvidia": "nvidia/nemotron-3-ultra-550b-a55b",
-    }
+    # 5. validate ---------------------------------------------------------
+    node("validate", "running", detail="KaTeX + timing")
+    fixed = check_tex(scenes)
+    time_storyboard(scenes, seconds + OVERLAP * (len(scenes) - 1) / FPS)
+    starts, total = scene_starts(scenes)
+    log("validate", f"Formulas checked ({fixed} repaired); storyboard is {total:.0f}s", "success")
+    node("validate", "done", detail=f"{total:.0f}s storyboard")
 
-    await provider.initialize({
-        "apiKey": api_key,
-        "model": model_map[provider_name],
-        "temperature": 0.25,
-        "maxTokens": 65536,
-        "timeout": 120,
-    })
+    props = {"meta": {"title": outline["title"], "subject": outline["subject"],
+                      "chapter": outline["chapter"], "level": outline["level"] or audience},
+             "scenes": scenes}
+    props_file = run_dir / "storyboard.json"
+    props_file.write_text(json.dumps(props, indent=1, ensure_ascii=False), encoding="utf-8")
+    (run_dir / "outline.json").write_text(json.dumps(outline, indent=1, ensure_ascii=False), encoding="utf-8")
 
-
-async def _generate_script(provider, topic: str, topic_type: str, instructions: str | None) -> TeachingScript:
-    """Step 2: Generate the teaching script (narration + visual beats) via LLM."""
-    system_prompt = build_script_prompt(topic, topic_type, instructions)
-
-    # Use the provider's generate_spec endpoint to get JSON
-    raw = await provider.generate_spec({
-        "topic": topic,
-        "topic_type": topic_type,
-        "instructions": instructions or "",
-        "task": "script",
-    })
-
-    # The provider returns JSON; we need to inject the system prompt.
-    # Since generate_spec doesn't take a system_prompt param, we call the
-    # provider directly via a custom path. For now, parse what we get.
-    if isinstance(raw, dict):
-        beats = []
-        for b in raw.get("beats", []):
-            beats.append(VisualBeat(
-                id=b.get("id", ""),
-                type=BeatType(b.get("type", "hook")),
-                title=b.get("title", ""),
-                narration=b.get("narration", ""),
-                visual_intent=b.get("visual_intent", ""),
-                start_frame=b.get("start_frame", 0),
-                end_frame=b.get("end_frame", 180),
-                elements=b.get("elements", []),
-                emphasis_words=b.get("emphasis_words", []),
-            ))
-        return TeachingScript(
-            topic=topic,
-            topic_type=topic_type,
-            subcategory=raw.get("subcategory"),
-            grade_level=raw.get("grade_level"),
-            core_message=raw.get("core_message", ""),
-            metaphor=raw.get("metaphor", ""),
-            beats=beats,
-            estimated_duration_seconds=raw.get("estimated_duration_seconds", DEFAULT_DURATION),
-            learning_objectives=raw.get("learning_objectives", []),
-        )
-
-    raise PipelineError(f"Script generation returned unexpected format: {type(raw)}")
-
-
-def _spec_to_tsx(script_context: dict, template_name: str, instructions: str | None) -> str:
-    """Generate TSX from script context using the premium prompt."""
-    system_prompt = build_system_prompt()
-    user_message = build_user_message(script_context, instructions)
-
-    # Combine system + user into one message for the provider
-    full_prompt = f"{system_prompt}\n\n{user_message}"
-
-    # Return the prompt so the caller can pass it to the provider
-    return full_prompt
-
-
-async def _generate_component_from_script(
-    provider,
-    script: TeachingScript,
-    instructions: str | None,
-) -> str:
-    """Step 3: Generate the Remotion component from the teaching script."""
-    script_context = script_to_context(script)
-
-    # Build the premium prompt
-    system_prompt = build_system_prompt()
-    user_message = build_user_message(script_context, instructions)
-    full_prompt = f"{system_prompt}\n\n{user_message}"
-
-    # Call provider with the full prompt as a "component" task
-    raw = await provider.generate_spec({
-        "topic": script.topic,
-        "topic_type": script.topic_type,
-        "instructions": instructions or "",
-        "task": "component",
-        "prompt": full_prompt,
-    })
-
-    # If the provider returns a dict (VideoSpec), convert to TSX using templates
-    if isinstance(raw, dict):
-        return _dict_to_tsx(raw, script)
-
-    # If it returns a string, assume it's already TSX
-    if isinstance(raw, str):
-        return raw
-
-    raise PipelineError(f"Component generation returned unexpected format: {type(raw)}")
-
-
-def _dict_to_tsx(spec_dict: dict, script: TeachingScript) -> str:
-    """Convert a VideoSpec dict to TSX using the appropriate template."""
-    scenes = spec_dict.get("scenes", [])
-    if not scenes:
-        raise PipelineError("No scenes in VideoSpec")
-
-    scene = scenes[0]
-    scene_type = scene.get("type", "concept-map")
-    total_frames = sum(s.get("duration_frames", 1800) for s in scenes) or 1800
-
-    template_imports = {
-        "concept-map": "ConceptMapScene",
-        "network-flow": "NetworkFlowScene",
-        "timeline": "TimelineScene",
-        "math-derivation": "MathDerivationScene",
-        "chemistry-reaction": "ChemistryReactionScene",
-        "physics-simulation": "PhysicsSimulationScene",
-        "biology-diagram": "BiologyDiagramScene",
-        "system-design": "SystemDesignScene",
-        "code-walkthrough": "CodeWalkthroughScene",
-        "terminal": "CodeWalkthroughScene",
-        "diff": "CodeWalkthroughScene",
-        "call-stack": "CodeWalkthroughScene",
-        "memory-diagram": "CodeWalkthroughScene",
-        "file-tree": "CodeWalkthroughScene",
-        "chart": "PhysicsSimulationScene",
-        "quiz": "CodeWalkthroughScene",
-        "recap": "CodeWalkthroughScene",
-    }
-
-    template_name = template_imports.get(scene_type, "ConceptMapScene")
-
-    scene_props = {
-        "title": script.topic,
-        "subtitle": script.core_message,
-        "durationFrames": total_frames,
-        "beats": [
-            {
-                "id": b.get("id", ""),
-                "name": b.get("title", ""),
-                "startFrame": b.get("start_frame", 0),
-                "endFrame": b.get("end_frame", 180),
-                "elements": b.get("elements", []),
-            }
-            for b in script.beats
-        ],
-    }
-
-    # Add scene-specific props
-    if scene_type == "concept-map" and scene.get("graph"):
-        scene_props["nodes"] = scene["graph"].get("nodes", [])
-        scene_props["edges"] = scene["graph"].get("edges", [])
-    elif scene_type == "network-flow" and scene.get("graph"):
-        scene_props["layers"] = scene["graph"].get("nodes", [])
-        scene_props["connections"] = scene["graph"].get("edges", [])
-    elif scene_type == "math-derivation":
-        scene_props["problem"] = script.topic
-        scene_props["steps"] = scene.get("layout_config", {}).get("steps", [])
-    elif scene_type == "chemistry-reaction" and scene.get("layout_config", {}).get("reaction"):
-        scene_props["reactants"] = scene["layout_config"]["reaction"].get("reactants", [])
-        scene_props["products"] = scene["layout_config"]["reaction"].get("products", [])
-        scene_props["conditions"] = scene["layout_config"]["reaction"].get("conditions", {})
-    elif scene_type == "physics-simulation":
-        scene_props["simulationType"] = "projectile"
-        scene_props["parameters"] = scene.get("layout_config", {}).get("parameters", {})
-        scene_props["initialState"] = {}
-        scene_props["equations"] = scene.get("layout_config", {}).get("equations", [])
-    elif scene_type == "biology-diagram" and scene.get("layout_config", {}).get("structures"):
-        scene_props["structures"] = scene["layout_config"]["structures"]
-        scene_props["processes"] = scene.get("layout_config", {}).get("processes", [])
-    elif scene_type == "system-design" and scene.get("layout_config", {}).get("architecture"):
-        scene_props["components"] = scene["layout_config"]["architecture"].get("components", [])
-        scene_props["connections"] = scene["layout_config"]["architecture"].get("connections", [])
-        scene_props["requirements"] = scene.get("layout_config", {}).get("requirements", [])
-    elif scene_type == "code-walkthrough" and scene.get("code_blocks"):
-        scene_props["language"] = scene["code_blocks"][0].get("language", "text")
-        scene_props["files"] = scene["code_blocks"]
-        scene_props["executionTrace"] = scene.get("layout_config", {}).get("trace", [])
-
-    props_json = json.dumps(scene_props, indent=2)
-
-    prop_strings = []
-    for k, v in scene_props.items():
-        if isinstance(v, str):
-            escaped = v.replace("`", "\\`")
-            prop_strings.append(f'{k}=`{escaped}`')
-        else:
-            prop_strings.append(f'{k}={{{json.dumps(v)}}}')
-
-    tsx = f'''import React from "react";
-import {{ AbsoluteFill, useCurrentFrame, useVideoConfig, interpolate, spring, Sequence }} from "remotion";
-import {{ {template_name} }} from "./templates";
-
-const FONT_FAMILY_SANS = "'Inter', 'Roboto', 'Helvetica Neue', sans-serif";
-const FONT_FAMILY_MONO = "'JetBrains Mono', 'Fira Code', monospace";
-const SAFE_AREA_PADDING = 96;
-
-export const EducationVideo: React.FC<{{ topic: string }}> = ({{ topic }}) => {{
-  const {{ width, height, fps, durationInFrames }} = useVideoConfig();
-  const frame = useCurrentFrame();
-
-  return (
-    <{template_name} {' '.join(prop_strings)} />
-  );
-}};'''
-
-    return tsx
-
-
-async def run(
-    topic: str,
-    client: str = "gemini",
-    concurrency: int = 2,
-    instructions: str | None = None,
-    duration: int = DEFAULT_DURATION,
-    audience: str = "beginner",
-) -> Path:
-    console.print(Panel(
-        f"[bold cyan]ScriptMotion (Script-First)[/bold cyan]\n\n"
-        f"Topic: [yellow]{topic}[/yellow]\n"
-        f"Client: [yellow]{PROVIDER_LABELS.get(client, client)}[/yellow]\n"
-        f"Duration: [yellow]{duration}s[/yellow]\n"
-        f"Concurrency: [yellow]{concurrency}[/yellow]",
-        border_style="cyan"
-    ))
-
-    if instructions:
-        console.print(f"[dim]Extra direction: {instructions}[/dim]")
-
-    # Incorporate audience into instructions for the LLM
-    audience_prefix = f"Target audience: {audience}."
-    if instructions:
-        effective_instructions = f"{audience_prefix} {instructions}"
+    # 6. render -----------------------------------------------------------
+    video = run_dir / "lesson.mp4"
+    if skip_render:
+        node("render", "skipped", detail="--no-render")
     else:
-        effective_instructions = audience_prefix
+        render_started = time.time()
+        render(props_file, video, concurrency)
+        node("render", "done", detail=f"{time.time() - render_started:.0f}s")
+        log("render", f"Video written in {time.time() - render_started:.0f}s", "success")
 
-    registry = ProviderRegistry()
-    _initialize_providers(registry)
-    await _initialize_provider(registry, client)
-
-    provider = registry.get(client)
-    if not provider:
-        raise PipelineError(f"Provider {client} not found")
-
-    # Step 1: Classify topic
-    classification = classifyTopic(topic, instructions or "")
-    console.print(f"[cyan]Detected topic type: {classification.topic_type.value} (confidence: {classification.confidence:.0%})[/cyan]")
-    if classification.subcategory:
-        console.print(f"[cyan]Subcategory: {classification.subcategory}[/cyan]")
-    if classification.grade_level:
-        console.print(f"[cyan]Grade level: Class {classification.grade_level}[/cyan]")
-
-    # Step 2: Generate teaching script (narration + visual beats)
-    console.print("[cyan]Step 1/3: Generating teaching script...[/cyan]")
-    script = await _generate_script(provider, topic, classification.topic_type.value, effective_instructions)
-    console.print(f"[green][OK] Script generated with {len(script.beats)} beats[/green]")
-    console.print(f"[cyan]Core message: {script.core_message}[/cyan]")
-    console.print(f"[cyan]Metaphor: {script.metaphor}[/cyan]")
-
-    # Step 3: Generate Remotion component from script
-    console.print("[cyan]Step 2/3: Generating Remotion component...[/cyan]")
-    tsx_code = await _generate_component_from_script(provider, script, effective_instructions)
-
-    # Clean TSX (strip markdown fences if provider added them)
-    for fence in ("```tsx", "```typescript", "```ts", "```jsx", "```"):
-        if tsx_code.startswith(fence):
-            tsx_code = tsx_code.split("\n", 1)[1]
-            break
-    if tsx_code.endswith("```"):
-        tsx_code = tsx_code.rsplit("```", 1)[0]
-    tsx_code = tsx_code.strip()
-
-    write_component(tsx_code)
-
-    # Step 4: Validate
-    console.print("[cyan]Step 3/3: Validating TypeScript...[/cyan]")
-    valid, error = validate_component()
-    if not valid:
-        console.print(f"[red][FAIL] Validation errors:[/red]\n{error}")
-        # Retry with error feedback
-        for attempt in range(1, MAX_RETRIES + 1):
-            console.print(f"[yellow]Retry {attempt}/{MAX_RETRIES} — sending compile error back to {PROVIDER_LABELS.get(client, client)}...[/yellow]")
-            try:
-                fix_prompt = f"""{build_system_prompt()}
-
-PREVIOUS COMPONENT HAD THESE TYPESCRIPT ERRORS:
-{error}
-
-Fix ONLY the errors above. Return the complete corrected component.
-Target audience: {audience}.
-Start with: import React from "react";
-End with the component closing brace."""
-                tsx_code = await provider.generate_spec({
-                    "topic": topic,
-                    "topic_type": classification.topic_type.value,
-                    "instructions": effective_instructions or "",
-                    "task": "fix",
-                    "prompt": fix_prompt,
-                    "previous_code": tsx_code,
-                })
-                if isinstance(tsx_code, str):
-                    for fence in ("```tsx", "```typescript", "```ts", "```jsx", "```"):
-                        if tsx_code.startswith(fence):
-                            tsx_code = tsx_code.split("\n", 1)[1]
-                            break
-                    if tsx_code.endswith("```"):
-                        tsx_code = tsx_code.rsplit("```", 1)[0]
-                    tsx_code = tsx_code.strip()
-                    write_component(tsx_code)
-                    valid, error = validate_component()
-                    if valid:
-                        break
-            except Exception as e:
-                console.print(f"[red]Fix attempt {attempt} failed: {e}[/red]")
-
-    if not valid:
-        raise PipelineError(
-            f"The TypeScript component still has errors after retries.\n"
-            f"Last error: {error}\n"
-            f"Inspect manually: cd remotion_project && npx remotion studio"
-        )
-
-    console.print("[green][OK] TypeScript validation passed[/green]")
-
-    # Step 5: Render
-    console.print("[cyan]Rendering video...[/cyan]")
-    output_path = render_video(topic, concurrency=concurrency)
-    console.print(f"\n[bold green]Done![/bold green] Video saved to:\n{output_path.resolve()}")
-    return output_path
-
-
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Generate and render an educational Remotion video.",
-    )
-    parser.add_argument("topic", nargs="+", help="Video topic")
-    parser.add_argument(
-        "--provider",
-        "--client",
-        dest="provider",
-        default="gemini",
-        choices=sorted(PROVIDER_LABELS.keys()),
-        help="LLM provider (default: gemini)",
-    )
-    parser.add_argument(
-        "--concurrency",
-        type=int,
-        default=2,
-        help="Remotion render concurrency, 1-8 (default: 2)",
-    )
-    parser.add_argument(
-        "--duration",
-        type=int,
-        default=DEFAULT_DURATION,
-        help=f"Target video duration in seconds (default: {DEFAULT_DURATION})",
-    )
-    parser.add_argument(
-        "--instructions",
-        default=None,
-        help="Extra direction for the model (audience, metaphor, constraints)",
-    )
-    parser.add_argument(
-        "--result-file",
-        default=None,
-        help="Write a JSON build result to this path",
-    )
-    args = parser.parse_args()
-    if not 1 <= args.concurrency <= 8:
-        parser.error("--concurrency must be between 1 and 8")
-    return args
+    usage = [{"name": s.name, "calls": s.calls, "failures": s.failures, "healthy": s.healthy} for s in pool.slots]
+    result = {
+        "ok": True, "topic": topic, "brief": brief, "title": outline["title"], "subject": outline["subject"],
+        "chapter": outline["chapter"], "level": props["meta"]["level"], "model": model,
+        "seconds": round(total, 1), "elapsed": round(time.time() - started, 1),
+        "dir": str(run_dir), "video": str(video) if video.exists() else None, "storyboard": str(props_file),
+        "chapters": [{"title": s.get("title") or s["type"], "type": s["type"],
+                      "start": round(starts[i], 2)} for i, s in enumerate(scenes)],
+        "keys": usage,
+    }
+    (run_dir / "run.json").write_text(json.dumps(result, indent=1, ensure_ascii=False), encoding="utf-8")
+    node("done", "done", detail=f"{result['elapsed']:.0f}s total")
+    emit("result", **result)
+    log("done", f"Lesson ready in {result['elapsed']:.0f}s: {video if video.exists() else props_file}", "success")
+    return result
 
 
 def main() -> int:
-    args = _parse_args()
-    topic = " ".join(args.topic).strip()
-    started = time.time()
-    result = {
-        "ok": False,
-        "topic": topic,
-        "provider": args.provider,
-        "concurrency": args.concurrency,
-    }
+    ap = argparse.ArgumentParser(description="Generate an animated school lesson video.")
+    ap.add_argument("topic", help="what the lesson is about")
+    ap.add_argument("--brief", "--instructions", dest="brief", default="",
+                    help="teacher's description: focus, examples, values to use, what to skip")
+    ap.add_argument("--audience", default="Class 10 student")
+    ap.add_argument("--duration", type=int, default=90, help="target length in seconds (30-300)")
+    ap.add_argument("--model", default=DEFAULT_MODEL, choices=list(MODELS))
+    ap.add_argument("--concurrency", type=int, default=None, help="render concurrency")
+    ap.add_argument("--out", default=str(VIDEOS))
+    ap.add_argument("--no-render", action="store_true", help="plan and validate only")
+    ap.add_argument("--result-file", default=None, help="write the result JSON here")
+    args = ap.parse_args()
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
 
+    seconds = max(30, min(300, args.duration))
     try:
-        output_path = asyncio.run(run(
-            topic,
-            client=args.provider,
-            concurrency=args.concurrency,
-            instructions=args.instructions,
-            duration=args.duration,
-            audience=args.audience,
-        ))
-        result.update({
-            "ok": True,
-            "video": output_path.as_posix(),
-            "elapsed_seconds": round(time.time() - started, 2),
-        })
+        result = build(args.topic, args.brief, args.audience, seconds, args.model,
+                       args.concurrency, Path(args.out), args.no_render)
+    except (LLMError, RuntimeError) as exc:
+        log("error", str(exc), "error")
+        emit("result", ok=False, error=str(exc))
         if args.result_file:
-            _write_result(args.result_file, result)
-        return 0
-    except Exception as exc:
-        result.update({
-            "ok": False,
-            "error": str(exc),
-            "elapsed_seconds": round(time.time() - started, 2),
-        })
-        if args.result_file:
-            _write_result(args.result_file, result)
-        console.print(Panel(
-            f"[red]Build failed[/red]\n\n{exc}",
-            title="Error",
-            border_style="red",
-        ))
+            Path(args.result_file).write_text(json.dumps({"ok": False, "error": str(exc)}), encoding="utf-8")
         return 1
+    if args.result_file:
+        Path(args.result_file).write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
+    return 0
 
 
 if __name__ == "__main__":

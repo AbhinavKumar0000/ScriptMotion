@@ -1,8 +1,12 @@
 .env
 .runs/
 __pycache__/
-output/
-remotion_project/
-src/__pycache__/
-venv/
 *.pyc
+venv/
+output/
+
+# Remotion: track the component library, not build products
+remotion_project/node_modules/
+remotion_project/_legacy/
+remotion_project/out/
+remotion_project/props.json

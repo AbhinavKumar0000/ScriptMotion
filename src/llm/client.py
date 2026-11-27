@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -26,22 +27,34 @@ MODELS = {
         "id": "nvidia/nemotron-3-ultra-550b-a55b",
         "label": "Nemotron 3 Ultra",
         "note": "Most reliable diagrams. Recommended.",
+        "price": {"in": 0.50, "out": 2.20},
         "extra": {"chat_template_kwargs": {"enable_thinking": False}},
     },
     "kimi": {
         "id": "moonshotai/kimi-k3.1-pro",
         "label": "Kimi K3.1 Pro",
         "note": "Careful reasoning, slower.",
+        "price": {"in": 2.00, "out": 10.00},
         "extra": {},
     },
     "nemotron-lightning": {
         "id": "nvidia/nemotron-3.5-lightning-30b-a3b",
         "label": "Nemotron 3.5 Lightning",
         "note": "Fastest drafts.",
+        "price": {"in": 0.08, "out": 0.20},
         "extra": {},
     },
 }
 DEFAULT_MODEL = "nemotron-ultra"
+# Prices are USD per 1M tokens: the public pay-as-you-go list price of each model
+# (OpenRouter for the Nemotrons, Moonshot for Kimi), checked on this date. The NVIDIA
+# keys themselves may be free credits; the cost shown is what the run would cost at list price.
+PRICES_CHECKED = "2026-11-27"
+
+
+def cost_of(model: str, prompt_tokens: int, completion_tokens: int) -> float:
+    price = MODELS.get(model, {}).get("price") or {"in": 0.0, "out": 0.0}
+    return prompt_tokens / 1e6 * price["in"] + completion_tokens / 1e6 * price["out"]
 
 THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 
@@ -132,6 +145,21 @@ class LLM:
         self.model_key = model
         self.model = MODELS[model]
         self._clients: dict[str, OpenAI] = {}
+        # tokens billed across the whole run, including attempts whose output was unusable
+        self._lock = threading.Lock()
+        self.calls = 0
+        self.prompt_tokens = 0
+        self.completion_tokens = 0
+
+    def usage(self) -> dict:
+        """Token count and list-price cost of every model call made so far."""
+        with self._lock:
+            pt, ct, calls = self.prompt_tokens, self.completion_tokens, self.calls
+        price = self.model.get("price") or {"in": 0.0, "out": 0.0}
+        return {"model": self.model_key, "label": self.model["label"], "calls": calls,
+                "prompt_tokens": pt, "completion_tokens": ct, "total_tokens": pt + ct,
+                "price_in": price["in"], "price_out": price["out"], "prices_checked": PRICES_CHECKED,
+                "cost_usd": round(cost_of(self.model_key, pt, ct), 6), "estimated": False}
 
     def _client(self, key: str) -> OpenAI:
         if key not in self._clients:
@@ -167,6 +195,11 @@ class LLM:
                     ],
                     extra_body=self.model["extra"] or None,
                 )
+                usage = getattr(response, "usage", None)
+                with self._lock:
+                    self.calls += 1
+                    self.prompt_tokens += getattr(usage, "prompt_tokens", 0) or 0
+                    self.completion_tokens += getattr(usage, "completion_tokens", 0) or 0
                 choice = response.choices[0]
                 text = choice.message.content or ""
                 _trace(task, attempt, slot.label, user, text)
@@ -175,7 +208,6 @@ class LLM:
                 data = _extract_json(text)
                 if not isinstance(data, dict):
                     raise ValueError("response JSON is not an object")
-                usage = getattr(response, "usage", None)
                 meta = {
                     "key": slot.label,
                     "seconds": round(time.time() - started, 1),

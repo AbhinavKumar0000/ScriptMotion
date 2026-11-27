@@ -27,7 +27,7 @@ from urllib.parse import quote, unquote, urlparse
 
 from src.catalog import CATALOG
 from src.events import PREFIX
-from src.llm.client import DEFAULT_MODEL, MODELS
+from src.llm.client import DEFAULT_MODEL, MODELS, PRICES_CHECKED, cost_of
 from src.llm.keypool import KeyPool
 
 ROOT = Path(__file__).resolve().parent
@@ -142,16 +142,37 @@ def history(limit: int = 40) -> list[dict]:
             continue
         folder = run.parent.name
         video = run.parent / "lesson.mp4"
+        usage = data.get("usage") or _estimate_usage(run.parent, data.get("model") or DEFAULT_MODEL)
         items.append({
             "id": folder, "title": data.get("title"), "topic": data.get("topic"), "brief": data.get("brief", ""),
             "subject": data.get("subject"), "chapter": data.get("chapter"), "level": data.get("level"),
             "seconds": data.get("seconds"), "elapsed": data.get("elapsed"), "model": data.get("model"),
-            "chapters": data.get("chapters", []),
+            "chapters": data.get("chapters", []), "usage": usage,
             "video": f"/media/{quote(folder)}/lesson.mp4" if video.exists() else None,
             "poster": f"/media/{quote(folder)}/poster.jpg" if (video.parent / "poster.jpg").exists() else None,
             "created": run.stat().st_mtime,
         })
     return items
+
+
+def _estimate_usage(folder: Path, model: str) -> dict | None:
+    """Runs made before token counting was added: estimate from the saved prompt/response
+    trace (about 4 characters per token). Marked as an estimate in the UI."""
+    trace = folder / "trace"
+    files = list(trace.glob("*.txt")) if trace.exists() else []
+    if not files:
+        return None
+    pt = ct = 0
+    for f in files:
+        text = f.read_text(encoding="utf-8", errors="ignore")
+        prompt, _, response = text.partition("\n## response\n")
+        pt += len(prompt) // 4
+        ct += len(response) // 4
+    info = MODELS.get(model, MODELS[DEFAULT_MODEL])
+    price = info.get("price") or {"in": 0.0, "out": 0.0}
+    return {"model": model, "label": info["label"], "calls": len(files), "prompt_tokens": pt, "completion_tokens": ct,
+            "total_tokens": pt + ct, "price_in": price["in"], "price_out": price["out"], "prices_checked": PRICES_CHECKED,
+            "cost_usd": round(cost_of(model, pt, ct), 6), "estimated": True}
 
 
 # =================================================================== server

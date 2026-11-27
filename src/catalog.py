@@ -476,6 +476,86 @@ add(SceneType(
     chapters="Carbon & its compounds; Organic chemistry",
 ))
 
+_ID = Str(max=6, desc="short atom id, letters and digits, e.g. 'C1', 'O', 'Br'")
+_PAIR = Str(max=13, desc="'id-id', e.g. 'C1-Br'")
+_REF = Str(max=13, desc="an atom id (its lone pair / that atom) or 'id-id' (that bond, or the gap where a bond will form)")
+add(SceneType(
+    "mechanism", "chemistry",
+    "Animated reaction mechanism with real molecules: bonds break and form, curly arrows show electron pairs (or single electrons) moving, "
+    "atoms move, charges and lone pairs update each step. Use for any reaction that should be SHOWN happening: SN1/SN2, addition to alkenes, "
+    "elimination, esterification, acid-base proton transfer, homolytic/heterolytic cleavage, free-radical halogenation, electron transfer "
+    "(e.g. Na giving an electron to Cl), combustion or bond-energy steps.",
+    {"atoms": List(item=Obj(fields={
+        "id": _ID,
+        "el": Str(max=4, desc="element symbol (H C N O F Cl Br I S P Na K Mg ...), a group label (R, Me, Et, Ph, CH3, C2H5 = one bond), or 'e' for a free electron"),
+        "x": Num(lo=-9, hi=9, desc="position in bond lengths; a bond is 1.2-1.6 long"),
+        "y": Num(lo=-4.5, hi=4.5, desc="up is +"),
+        "charge": Num(lo=-2, hi=2, integer=True, default=0),
+        "radical": Num(lo=0, hi=1, integer=True, default=0, desc="1 = one unpaired electron")}), lo=2, hi=22,
+        desc="every atom of every species, at its starting place; reagents can wait off to one side"),
+     "bonds": List(item=Obj(fields={"a": _ID, "b": _ID, "order": Num(lo=1, hi=3, integer=True, default=1)}), lo=0, hi=26),
+     "steps": List(item=Obj(fields={
+         "title": Str(max=40, desc="what happens, e.g. 'Hydroxide attacks carbon'"),
+         "caption": Str(max=160, desc="ONE plain sentence, at most 20 words"),
+         "arrows": List(item=Obj(fields={"from": _REF, "to": _REF,
+                                         "kind": Enum(options=("pair", "single"), default="pair", desc="pair = curly arrow, single = fish-hook")}),
+                        lo=0, hi=4, default=list),
+         "break": List(item=_PAIR, lo=0, hi=4, default=list, desc="bonds that break"),
+         "form": List(item=Obj(fields={"a": _ID, "b": _ID, "order": Num(lo=1, hi=3, integer=True, default=1)}), lo=0, hi=4, default=list,
+                      desc="new bonds, or a new order for an existing bond"),
+         "move": List(item=Obj(fields={"id": _ID, "x": Num(lo=-9, hi=9), "y": Num(lo=-4.5, hi=4.5)}), lo=0, hi=16, default=list,
+                      desc="new positions after the step (move every atom whose geometry changes)"),
+         "charge": List(item=Obj(fields={"id": _ID, "charge": Num(lo=-2, hi=2, integer=True)}), lo=0, hi=6, default=list),
+         "radical": List(item=Obj(fields={"id": _ID, "n": Num(lo=0, hi=1, integer=True)}), lo=0, hi=4, default=list)}), lo=1, hi=4),
+     "labels": List(item=Obj(fields={"text": Str(max=24), "x": Num(lo=-9, hi=9), "y": Num(lo=-4.5, hi=4.5),
+                                     "from_step": Num(lo=0, hi=4, integer=True, default=0), "to_step": Num(lo=0, hi=4, integer=True, default=4)}),
+                    lo=0, hi=4, default=list, desc="short names such as 'nucleophile' or 'leaving group', shown from_step..to_step (0 = before step 1)")},
+    {"title": "SN2: hydroxide meets bromomethane", "caption": "The hydroxide ion carries a negative charge and three lone pairs.",
+     "atoms": [
+         {"id": "O", "el": "O", "x": -4.6, "y": 0, "charge": -1}, {"id": "Ho", "el": "H", "x": -5.6, "y": 0.7},
+         {"id": "C", "el": "C", "x": 0, "y": 0}, {"id": "Br", "el": "Br", "x": 1.6, "y": 0},
+         {"id": "H1", "el": "H", "x": -0.6, "y": 1.25}, {"id": "H2", "el": "H", "x": -0.6, "y": -1.2}, {"id": "H3", "el": "H", "x": -1.25, "y": 0.55}],
+     "bonds": [{"a": "O", "b": "Ho"}, {"a": "C", "b": "Br"}, {"a": "C", "b": "H1"}, {"a": "C", "b": "H2"}, {"a": "C", "b": "H3"}],
+     "steps": [{
+         "title": "Backside attack, bromide leaves",
+         "caption": "Oxygen's lone pair forms a C–O bond as the C–Br pair leaves with bromine.",
+         "arrows": [{"from": "O", "to": "O-C", "kind": "pair"}, {"from": "C-Br", "to": "Br", "kind": "pair"}],
+         "break": ["C-Br"], "form": [{"a": "O", "b": "C", "order": 1}],
+         "move": [{"id": "O", "x": -1.5, "y": 0}, {"id": "Ho", "x": -2.6, "y": 0.7}, {"id": "Br", "x": 4.2, "y": 0},
+                  {"id": "H1", "x": 0.6, "y": 1.25}, {"id": "H2", "x": 0.6, "y": -1.2}, {"id": "H3", "x": 1.25, "y": 0.55}],
+         "charge": [{"id": "O", "charge": 0}, {"id": "Br", "charge": -1}]}],
+     "labels": [{"text": "nucleophile", "x": -5, "y": -1.3, "from_step": 0, "to_step": 0},
+                {"text": "leaving group", "x": 4.2, "y": -1.3, "from_step": 1, "to_step": 1}]},
+    base_seconds=6, chapters="Organic chemistry; Haloalkanes; Hydrocarbons; Chemical bonding; Chemical reactions",
+))
+
+add(SceneType(
+    "bond_orbitals", "chemistry",
+    "Zoom into ONE covalent bond: the line becomes two nuclei with the sigma cloud between them and pi lobes merging above/below "
+    "(double/triple bonds), the shared electrons, bond length and energy; can then break the bond evenly (homolytic, two radicals) "
+    "or unevenly (heterolytic, two ions). Use for sigma vs pi bonds, single/double/triple bond strength, and bond fission types.",
+    {"atom_a": Str(max=2, default="C", desc="element symbol"), "atom_b": Str(max=2, default="C", desc="element symbol; keeps the pair in heterolytic fission"),
+     "order": Num(lo=1, hi=3, integer=True, default=1, desc="1 single, 2 double, 3 triple; a beat can change it to show pi bonds adding"),
+     "breaking": Enum(options=("none", "homolytic", "heterolytic"), default="none",
+                      desc="set in a beat to break the bond at that moment (only for a single bond)")},
+    {"title": "Inside a carbon-carbon bond", "caption": "A single bond is one sigma bond: two electrons between the nuclei.",
+     "atom_a": "C", "atom_b": "C", "order": 1, "breaking": "none",
+     "beats": [{"set": {"order": 2}, "caption": "A double bond adds a pi bond: p orbitals overlap side-on above and below."},
+               {"set": {"order": 3}, "caption": "A triple bond has two pi bonds at right angles, so it is the shortest and strongest."}]},
+    base_seconds=12, notes=False, chapters="Chemical bonding & molecular structure; Organic chemistry basics; Hydrocarbons",
+))
+add(SceneType(
+    "aromatic", "chemistry",
+    "Benzene (or a monosubstituted benzene): Kekule structure draws, curly arrows shift the pi bonds round the ring (resonance), "
+    "the bonds even out into the delocalised circle, then the ring tilts to show p orbitals merging into pi-electron clouds above "
+    "and below; readout of 6 pi electrons, Huckel 4n+2, equal 139 pm bonds.",
+    {"substituent": Enum(options=("none", "CH3", "OH", "NH2", "Cl", "Br", "NO2", "CHO", "COOH"), default="none"),
+     "show_orbitals": Bool(default=True, desc="tilt the ring to show the pi clouds")},
+    {"title": "Why benzene is special", "caption": "Benzene's six pi electrons are shared by the whole ring.",
+     "substituent": "none", "show_orbitals": True},
+    base_seconds=16, notes=False, chapters="Hydrocarbons; Organic chemistry basics; Aromatic compounds",
+))
+
 # ============================================================== maths
 add(SceneType(
     "function_graph", "maths",

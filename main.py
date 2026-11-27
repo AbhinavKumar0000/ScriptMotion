@@ -158,10 +158,14 @@ def build(topic: str, brief: str, audience: str, seconds: int, model: str,
         "dir": str(run_dir), "video": str(video) if video.exists() else None, "storyboard": str(props_file),
         "chapters": chapters(scenes, starts),
         "keys": usage,
+        "usage": llm.usage(),
     }
     (run_dir / "run.json").write_text(json.dumps(result, indent=1, ensure_ascii=False), encoding="utf-8")
     node("done", "done", detail=f"{result['elapsed']:.0f}s total")
     emit("result", **result)
+    u = result["usage"]
+    log("done", f"{u['total_tokens']:,} tokens ({u['prompt_tokens']:,} in, {u['completion_tokens']:,} out) in {u['calls']} calls, "
+                f"${u['cost_usd']:.4f} at list price", "info")
     log("done", f"Lesson ready in {result['elapsed']:.0f}s: {video if video.exists() else props_file}", "success")
     return result
 

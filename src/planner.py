@@ -88,8 +88,13 @@ Structure:
    Put every variation of one diagram in ONE scene as beats, never in consecutive scenes
    (e.g. one lens scene: object beyond 2F, beat: move it between F and 2F, beat: move it inside F).
 3. Use a second or third component only when the idea needs a different picture.
-4. At most one "worked_example" (only for numerical topics) and at most one "equation". Nothing else textual.
-5. Each scene's goal names the concrete starting setup and each beat's change
+4. Chemistry that HAPPENS (a reaction, bonds breaking or forming, an electron leaving or joining, a proton moving,
+   an organic reaction such as substitution, addition, elimination or esterification) is a "mechanism" scene with the real
+   molecules and 1-4 steps. Use "reaction" only to show the balanced equation, "bonding" for ionic vs covalent electron sharing,
+   "bond_orbitals" to zoom into one bond (sigma/pi, single/double/triple, homolytic vs heterolytic fission) and "aromatic" for
+   benzene, resonance and delocalisation.
+5. At most one "worked_example" (only for numerical topics) and at most one "equation". Nothing else textual.
+6. Each scene's goal names the concrete starting setup and each beat's change
    (e.g. "convex lens f = 10 cm, object at 25 cm; beats: object to 15 cm, then to 6 cm").
 
 Return:
@@ -156,6 +161,19 @@ def _batch_prompt(context: str, items: list[tuple[int, dict]], errors: dict[int,
     for kind in sorted(seen_types):
         example = dict(CATALOG[kind].example, type=kind)
         schemas.append(f"{schema_text(kind)}\nShape example (do NOT reuse its values): {json.dumps(example, ensure_ascii=False)}")
+    extra = ""
+    if "mechanism" in seen_types:
+        extra = """
+Drawing a "mechanism":
+- Coordinates are in bond lengths, y up. Bonds 1.2-1.6 long; non-bonded atoms at least 1.0 apart. Draw every H that matters.
+- Use real 2D geometry: about 120 degrees around sp2 carbons, a zig-zag for chains, a reagent waiting 2-3 units away on the side it attacks from.
+- Charges must match bonds: lone pairs are worked out from valence, bonds and charge (C+ has 3 bonds, O- in hydroxide has 1, Br- has none).
+  Neutral free atoms with an odd electron (Na, Cl, CH3) need radical 1. A carbocation is charge +1 with 3 bonds.
+- Each step: curly arrows start at a lone pair (atom id) or a bond ('A-B') and end at an atom or at the gap where the new bond forms ('A-B').
+  Use kind "single" (fish-hook) for one electron (radicals, electron transfer). List every bond that breaks or forms and move the atoms
+  so new bonds end 1.2-1.6 long and leaving groups drift 2+ units away.
+- One step per arrow-pushing event (e.g. SN1: ionisation, then attack). Step captions narrate what the electrons do.
+"""
     return f"""{context}
 
 Write the full data for these scenes:
@@ -165,7 +183,7 @@ Write the full data for these scenes:
 Field contracts (keys marked ? are optional; respect the ranges):
 
 {chr(10).join(schemas)}
-
+{extra}
 Return {{"scenes": [ ... ]}} with exactly {len(items)} object(s): only scene(s) {", ".join(str(i + 1) for i, _ in items)} above,
 in that order, each with its "type". Do not write any other scene of the lesson.
 When a Goal describes changes to the setup, write them as "beats" (only the fields listed for beats);

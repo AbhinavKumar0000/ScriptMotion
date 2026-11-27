@@ -7,6 +7,8 @@ import * as Wv from "./scenes/waves";
 import * as M from "./scenes/mechanics";
 import * as E from "./scenes/electro";
 import * as Ch from "./scenes/chemistry";
+import { Mechanism } from "./scenes/mechanism";
+import { Aromatic, BondOrbitals } from "./scenes/orbitals";
 import * as Ma from "./scenes/maths";
 
 type Entry = { C: React.FC<SceneProps>; notes: boolean };
@@ -56,6 +58,9 @@ export const REGISTRY: Record<string, Entry> = {
   ph_scale: { C: Ch.PHScale, notes: true },
   electrochemical_cell: { C: Ch.ElectroCell, notes: false },
   hydrocarbon: { C: Ch.Hydrocarbon, notes: true },
+  mechanism: { C: Mechanism, notes: false },
+  bond_orbitals: { C: BondOrbitals, notes: false },
+  aromatic: { C: Aromatic, notes: false },
 
   function_graph: { C: Ma.FunctionGraph, notes: true },
   number_line: { C: Ma.NumberLine, notes: true },

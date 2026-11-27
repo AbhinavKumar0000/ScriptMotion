@@ -58,6 +58,7 @@ def symbol(value: str) -> str:
 def _atoms(formula: str) -> Counter:
     text = re.sub(r"\^\{?[0-9]*[+-]\}?|\((?:s|l|g|aq)\)|\s", "", formula)
     text = text.replace("·", ".").replace("*", ".")
+    text = re.sub(r"[=#≡–—\-]", "", text)  # structural bond symbols carry no atoms
     total: Counter = Counter()
     for part in text.split("."):
         lead = re.match(r"^(\d+)", part)
@@ -213,6 +214,267 @@ def _check(scene: dict) -> None:
     elif kind in ("equation", "worked_example"):
         if kind == "equation" and scene["result_index"] >= len(scene["steps"]):
             scene["result_index"] = -1
+    elif kind == "mechanism":
+        _check_mechanism(scene)
+    elif kind == "bond_orbitals":
+        caps = {"H": 1, "F": 1, "Cl": 1, "Br": 1, "I": 1, "O": 2, "S": 2, "N": 3, "C": 3}
+        for f in ("atom_a", "atom_b"):
+            el = _element(scene[f])
+            if el not in caps:
+                raise SchemaError(f"bond_orbitals.{f} '{scene[f]}' must be one of {', '.join(caps)}")
+            scene[f] = el
+        top = min(caps[scene["atom_a"]], caps[scene["atom_b"]])
+        if scene["atom_a"] == scene["atom_b"] == "O":
+            top = 2
+        if scene["order"] > top:
+            raise SchemaError(f"bond_orbitals: a {scene['atom_a']}-{scene['atom_b']} bond can be at most order {top}")
+        if scene["breaking"] != "none" and scene["order"] > 1:
+            raise SchemaError("bond_orbitals: only a single bond (order 1) can be shown breaking")
+
+
+# ------------------------------------------------------------ mechanisms
+# valence electrons for the formal-charge check; group labels count as one bond
+_VALENCE = {"H": 1, "He": 2, "Li": 1, "Be": 2, "B": 3, "C": 4, "N": 5, "O": 6, "F": 7, "Na": 1, "Mg": 2, "Al": 3,
+            "Si": 4, "P": 5, "S": 6, "Cl": 7, "K": 1, "Ca": 2, "Br": 7, "I": 7}
+_OCTET = {"H": 2, "He": 2, "Li": 2, "Be": 4, "B": 8, "C": 8, "N": 8, "O": 8, "F": 8}
+_GROUPS = {"R", "R1", "R2", "R3", "Me", "Et", "Pr", "Bu", "Ph", "Ar", "CH3", "C2H5", "C3H7", "C6H5", "Nu", "X"}
+
+
+def _element(el: str) -> str:
+    el = el.strip()
+    if el.lower() == "e":
+        return "e"
+    if el in _GROUPS or len(el) > 2 or not el.isalpha():
+        return el
+    return el[:1].upper() + el[1:].lower()
+
+
+def _pair(text: str, ids: set, where: str) -> tuple[str, str]:
+    parts = [p.strip() for p in re.split(r"\s*[-–—]\s*", str(text)) if p.strip()]
+    if len(parts) != 2 or parts[0] not in ids or parts[1] not in ids or parts[0] == parts[1]:
+        raise SchemaError(f"{where}: '{text}' must be two different atom ids joined by '-', e.g. 'C1-Br'")
+    return parts[0], parts[1]
+
+
+def _relax(atoms: dict, bonds: dict) -> None:
+    """Clean the 2D structure like a drawing program's "clean" command.
+
+    The model's coordinates are only a starting guess: bonds settle to standard lengths,
+    the bonds around each atom spread to 180/120/90 degrees (lone pairs take a slot on bent
+    atoms), and atoms are pushed off each other and off bonds they do not belong to. A weak
+    pull toward the authored positions keeps the layout the model intended.
+    """
+    import math
+    ids = list(atoms)
+    if len(ids) < 2:
+        return
+    P = {i: [float(atoms[i]["x"]), float(atoms[i]["y"])] for i in ids}
+    anchor = {i: tuple(P[i]) for i in ids}
+    el = {i: atoms[i]["el"] for i in ids}
+    nb: dict[str, list] = {i: [] for i in ids}
+    for (p, q) in bonds:
+        nb[p].append(q)
+        nb[q].append(p)
+    # small deterministic nudge so atoms placed exactly on top of each other can separate
+    for k, i in enumerate(ids):
+        P[i][0] += 1e-3 * math.cos(k * 2.4)
+        P[i][1] += 1e-3 * math.sin(k * 2.4)
+
+    def rest(p, q):
+        o = bonds.get(tuple(sorted((p, q))), 1)
+        base = 1.0 if "H" in (el[p], el[q]) else 1.4
+        return base * (1.0, 0.93, 0.87)[o - 1]
+
+    def lone_pairs(i):
+        v = _VALENCE.get(el[i])
+        if v is None:
+            return 0
+        used = sum(bonds.get(tuple(sorted((i, j))), 1) for j in nb[i])
+        return max(0, (v - used - atoms[i]["charge"] - atoms[i]["radical"]) // 2)
+
+    pairs13 = {tuple(sorted((a, b))) for c in ids for a in nb[c] for b in nb[c] if a != b}
+    for _ in range(400):
+        F = {i: [0.0, 0.0] for i in ids}
+
+        def push(i, dx, dy):
+            F[i][0] += dx
+            F[i][1] += dy
+
+        for (p, q) in bonds:
+            dx, dy = P[q][0] - P[p][0], P[q][1] - P[p][1]
+            d = math.hypot(dx, dy) or 1e-6
+            f = 0.5 * (d - rest(p, q)) / d
+            push(p, dx * f, dy * f)
+            push(q, -dx * f, -dy * f)
+        for c in ids:
+            deg = len(nb[c])
+            if deg < 2:
+                continue
+            dom = deg + (1 if deg == 2 and lone_pairs(c) > 0 else 0)
+            theta = 2 * math.pi / max(2, dom)
+            ring = sorted(nb[c], key=lambda j: math.atan2(P[j][1] - P[c][1], P[j][0] - P[c][0]))
+            for x in range(deg):
+                for y in range(x + 1, deg):
+                    a, b = ring[x], ring[y]
+                    m = min(y - x, deg - (y - x))
+                    ang = min(m * theta, 2 * math.pi - m * theta) if deg > 2 else theta
+                    la = math.hypot(P[a][0] - P[c][0], P[a][1] - P[c][1])
+                    lb = math.hypot(P[b][0] - P[c][0], P[b][1] - P[c][1])
+                    target = math.sqrt(max(1e-6, la * la + lb * lb - 2 * la * lb * math.cos(ang)))
+                    dx, dy = P[b][0] - P[a][0], P[b][1] - P[a][1]
+                    d = math.hypot(dx, dy) or 1e-6
+                    f = 0.22 * (d - target) / d
+                    push(a, dx * f, dy * f)
+                    push(b, -dx * f, -dy * f)
+        for x, p in enumerate(ids):
+            for q in ids[x + 1:]:
+                key = tuple(sorted((p, q)))
+                if key in bonds or key in pairs13:
+                    continue
+                dmin = 1.1 if "H" in (el[p], el[q]) or "e" in (el[p], el[q]) else 1.5
+                dx, dy = P[q][0] - P[p][0], P[q][1] - P[p][1]
+                d = math.hypot(dx, dy) or 1e-6
+                if d < dmin:
+                    f = 0.4 * (dmin - d) / d
+                    push(p, -dx * f, -dy * f)
+                    push(q, dx * f, dy * f)
+        # keep atoms off bonds they are not part of
+        for (p, q) in bonds:
+            ax, ay, bx, by = P[p][0], P[p][1], P[q][0], P[q][1]
+            vx, vy = bx - ax, by - ay
+            L2 = vx * vx + vy * vy or 1e-6
+            for i in ids:
+                if i in (p, q):
+                    continue
+                t = max(0.0, min(1.0, ((P[i][0] - ax) * vx + (P[i][1] - ay) * vy) / L2))
+                cx, cy = ax + vx * t, ay + vy * t
+                dx, dy = P[i][0] - cx, P[i][1] - cy
+                d = math.hypot(dx, dy) or 1e-6
+                if d < 0.7 and 0.05 < t < 0.95:
+                    f = 0.4 * (0.7 - d) / d
+                    push(i, dx * f, dy * f)
+                    push(p, -dx * f * 0.5, -dy * f * 0.5)
+                    push(q, -dx * f * 0.5, -dy * f * 0.5)
+        for i in ids:
+            push(i, (anchor[i][0] - P[i][0]) * 0.012, (anchor[i][1] - P[i][1]) * 0.012)
+            fx, fy = F[i]
+            n = math.hypot(fx, fy)
+            if n > 0.15:
+                fx, fy = fx * 0.15 / n, fy * 0.15 / n
+            P[i][0] += fx
+            P[i][1] += fy
+    for i in ids:
+        atoms[i]["x"], atoms[i]["y"] = round(P[i][0], 3), round(P[i][1], 3)
+
+
+def _check_mechanism(scene: dict) -> None:
+    """Replay every step, check each state is chemically sound, and store the states for the renderer.
+
+    Lone pairs are not authored: they follow from each atom's valence, bonds, charge and radical
+    (formal charge = valence - 2*lone pairs - radical - bonds), so a state whose charges do not
+    fit its bonds is refused with a reason the model can fix.
+    """
+    atoms: dict[str, dict] = {}
+    for a in scene["atoms"]:
+        aid = re.sub(r"[^A-Za-z0-9]", "", a["id"])
+        if not aid or aid in atoms:
+            raise SchemaError(f"atoms: id '{a['id']}' is empty or repeated; give every atom a unique id")
+        atoms[aid] = {"el": _element(a["el"]), "x": a["x"], "y": a["y"], "charge": a["charge"], "radical": a["radical"]}
+    ids = set(atoms)
+    bonds: dict[tuple, int] = {}
+    for b in scene["bonds"]:
+        bonds[tuple(sorted(_pair(f"{b['a']}-{b['b']}", ids, "bonds")))] = b["order"]
+
+    def snapshot(label: str) -> dict:
+        _relax(atoms, bonds)
+        order_sum = {i: 0 for i in ids}
+        for (p, q), o in bonds.items():
+            order_sum[p] += o
+            order_sum[q] += o
+        out = {}
+        for i, a in atoms.items():
+            el = a["el"]
+            if el == "e":
+                if order_sum[i]:
+                    raise SchemaError(f"{label}: free electron '{i}' cannot be bonded")
+                out[i] = [round(a["x"], 3), round(a["y"], 3), -1, 0, 0]
+                continue
+            v = _VALENCE.get(el, 1 if (el in _GROUPS or len(el) > 2) else None)
+            lp = 0
+            if v is not None:
+                rest = v - order_sum[i] - a["charge"] - a["radical"]
+                if rest < 0 or rest % 2:
+                    raise SchemaError(
+                        f"{label}: atom {i} ({el}) has bond order {order_sum[i]}, charge {a['charge']:+d}, radical {a['radical']}; "
+                        f"that does not fit the {v} valence electrons of {el}. Fix its bonds, charge or radical")
+                lp = rest // 2
+                if el in _OCTET and 2 * order_sum[i] + 2 * lp + a["radical"] > _OCTET[el]:
+                    raise SchemaError(f"{label}: atom {i} ({el}) would exceed its octet; break a bond to it in the same step")
+            out[i] = [round(a["x"], 3), round(a["y"], 3), a["charge"], a["radical"], lp]
+        # geometry: bonded atoms close, everything else apart
+        pts = {i: (a["x"], a["y"]) for i, a in atoms.items()}
+        dist = lambda p, q: ((pts[p][0] - pts[q][0]) ** 2 + (pts[p][1] - pts[q][1]) ** 2) ** 0.5
+        for (p, q) in bonds:
+            d = dist(p, q)
+            if d > 2.3 or d < 0.6:
+                raise SchemaError(f"{label}: bonded atoms {p} and {q} are {d:.1f} apart; keep bonds 0.9-1.8 long (move them)")
+        keys = sorted(ids)
+        for x, p in enumerate(keys):
+            for q in keys[x + 1:]:
+                if tuple(sorted((p, q))) not in bonds and dist(p, q) < 0.75:
+                    raise SchemaError(f"{label}: atoms {p} and {q} overlap ({dist(p, q):.2f} apart); keep them at least 0.9 apart")
+        return {"atoms": out, "bonds": [[p, q, o] for (p, q), o in sorted(bonds.items())],
+                "el": {i: a["el"] for i, a in atoms.items()}}
+
+    states = [snapshot("starting structure")]
+    for n, step in enumerate(scene["steps"], 1):
+        where = f"steps[{n - 1}]"
+        for arrow in step["arrows"]:
+            for end in ("from", "to"):
+                ref = re.sub(r"\s+", "", str(arrow[end]))
+                if ref in ids:
+                    arrow[end] = ref
+                    continue
+                p, q = _pair(ref, ids, f"{where}.arrows.{end}")
+                if end == "from" and tuple(sorted((p, q))) not in bonds:
+                    raise SchemaError(f"{where}.arrows.from '{ref}' is not a bond at the start of this step")
+                arrow[end] = f"{p}-{q}"
+        broken = []
+        for text in step["break"]:
+            key = tuple(sorted(_pair(text, ids, f"{where}.break")))
+            if key not in bonds:
+                raise SchemaError(f"{where}.break: there is no bond {text} at this point")
+            broken.append(key)
+        formed = {tuple(sorted((f["a"], f["b"]))) for f in step["form"]}
+        # an arrow that starts on a bond takes one electron pair out of it; if the model forgot to say
+        # so (a common slip with pi bonds), lower that bond's order instead of rejecting the scene
+        for arrow in step["arrows"]:
+            if "-" in arrow["from"]:
+                key = tuple(sorted(arrow["from"].split("-")))
+                if key not in broken and key not in formed and key in bonds:
+                    broken.append(key)
+        for key in dict.fromkeys(broken):
+            # breaking a multiple bond removes its pi bond first; the sigma bond goes only from a single bond
+            if bonds[key] > 1:
+                bonds[key] -= 1
+            else:
+                bonds.pop(key)
+        for f in step["form"]:
+            bonds[tuple(sorted(_pair(f"{f['a']}-{f['b']}", ids, f"{where}.form")))] = f["order"]
+        for key, field in (("move", None), ("charge", "charge"), ("radical", "n")):
+            for item in step[key]:
+                if item["id"] not in atoms:
+                    raise SchemaError(f"{where}.{key}: unknown atom '{item['id']}'")
+                if key == "move":
+                    atoms[item["id"]]["x"], atoms[item["id"]]["y"] = item["x"], item["y"]
+                else:
+                    atoms[item["id"]][key] = item[field]
+        if not (step["arrows"] or broken or step["form"] or step["move"] or step["charge"] or step["radical"]):
+            raise SchemaError(f"{where} changes nothing; every step must break, form or move something")
+        states.append(snapshot(f"after step {n}"))
+    for lab in scene["labels"]:
+        lab["to_step"] = max(lab["from_step"], min(lab["to_step"], len(scene["steps"])))
+    scene["states"] = states
 
 
 def clean_scene(raw: dict, expected_type: str | None = None) -> dict:
@@ -231,6 +493,10 @@ def clean_scene(raw: dict, expected_type: str | None = None) -> dict:
         scene[key] = fld.resolve(raw.get(key), key)
     _check(scene)
     scene["beats"] = clean_beats(scene, raw.get("beats"))
+    if kind == "mechanism":
+        # each mechanism step is a beat: it gets its own caption, title and time on screen
+        scene["beats"] = [{"set": {"step": i + 1}, "caption": st["caption"], "title": st["title"]}
+                          for i, st in enumerate(scene["steps"])]
     return scene
 
 
@@ -350,7 +616,9 @@ def beat_seconds(beat: dict) -> float:
 
 def time_storyboard(scenes: list[dict], target_seconds: float | None = None) -> None:
     """Set each scene's duration (frames) and each beat's start frame inside it."""
-    parts = [[scene_seconds(s)] + [beat_seconds(b) for b in s.get("beats") or []] for s in scenes]
+    # a mechanism step needs time for its arrows, the bond change and a moment to read the result
+    parts = [[scene_seconds(s)] + [max(6.0 if s["type"] == "mechanism" else 0, beat_seconds(b)) for b in s.get("beats") or []]
+             for s in scenes]
     # the title card is a fixed short beat; only the teaching scenes stretch to fit the target
     fixed = sum(sum(p) for s, p in zip(scenes, parts) if s["type"] == "title")
     total = sum(sum(p) for p in parts) - fixed

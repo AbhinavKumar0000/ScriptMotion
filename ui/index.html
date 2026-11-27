@@ -293,6 +293,14 @@ details.log-wrap summary:hover { color: var(--text); }
 .watch .meta { color: var(--text-3); margin-top: 8px; font-size: 14px; }
 .watch .brief { margin-top: 24px; padding-top: 22px; border-top: 1px solid var(--line); color: var(--text-2); font-size: 14.5px; }
 .watch .brief b { display: block; color: var(--text); font-weight: 500; margin-bottom: 4px; }
+.tile .cost { margin-top: 6px; font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.usage { margin-top: 22px; padding: 16px 18px; border-radius: 14px; background: var(--panel); box-shadow: inset 0 0 0 1px var(--line); max-width: 560px; }
+.usage h2 { margin: 0 0 10px; font-size: 14px; font-weight: 600; letter-spacing: -0.01em; display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.usage h2 span { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
+.usage dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 0; font-size: 13.5px; }
+.usage dt { color: var(--text-3); }
+.usage dd { margin: 0; text-align: right; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.usage .note { margin: 10px 0 0; font-size: 12px; color: var(--text-3); }
 .watch .acts { display: flex; gap: 10px; margin-top: 24px; flex-wrap: wrap; }
 .chapters h2 { font-size: 15px; font-weight: 600; margin: 4px 0 10px; letter-spacing: -0.01em; }
 .chapters ol { list-style: none; padding: 0; margin: 0; }
@@ -443,6 +451,7 @@ details.log-wrap summary:hover { color: var(--text); }
           <a class="btn ghost" id="wStory" target="_blank" rel="noopener">Storyboard</a>
           <a class="btn ghost" href="#/">Create another</a>
         </div>
+        <section class="usage" id="wUsage" hidden aria-label="Cost to make"></section>
         <div class="brief" id="wBrief"></div>
       </div>
       <nav class="chapters" aria-label="Chapters"><h2>Chapters</h2><ol id="wChapters"></ol></nav>
@@ -516,8 +525,8 @@ const Orbs = (() => {
   function mount(cv) {
     if (cv._orb) return cv._orb;
     const o = { cv, ctx: cv.getContext("2d"), state: cv.dataset.state || "idle", prev: null, since: 0, progress: 0,
-      dots: +cv.dataset.dots || 160, scatter: !!cv.dataset.scatter, rf: +cv.dataset.r || 0.4, off: null, burst: 0 };
-    if (o.scatter) cv.addEventListener("pointerdown", () => { o.burst = 1; });
+      dots: +cv.dataset.dots || 160, scatter: !!cv.dataset.scatter, rf: +cv.dataset.r || 0.4, off: null, energy: 0, hover: 0, cur: null };
+    if (o.scatter) cv.addEventListener("pointerdown", () => { o.energy = 1; });
     cv._orb = o; orbs.add(o); return o;
   }
   function set(cv, state, progress) {
@@ -536,11 +545,12 @@ const Orbs = (() => {
     const cay = Math.cos(ay), say = Math.sin(ay), cax = Math.cos(ax), sax = Math.sin(ax);
     const scale = 1 + (S.breathe ? Math.sin(t * 1.6) * S.breathe : 0) + (S.jitter ? Math.sin(t * 9) * S.jitter * 0.5 : 0);
     const scanY = Math.sin(t * 1.7) * 0.9, fillY = 1 - 2 * o.progress;
-    // pointer in canvas pixels, for the scatter physics
-    let off = null, mx = 0, my = 0, reach = 0, mvx = 0, mvy = 0;
+    // scatter: a smoothed cursor parts the dots softly; stirring builds "energy" that shatters
+    // the sphere outward along each dot's own direction, and every dot glides back at its own pace
+    let off = null, E = 0, H = 0, mx = 0, my = 0, rr = 0;
     if (physics) {
-      if (!o.off || o.off.length !== pts.length * 4) o.off = new Float32Array(pts.length * 4);
-      off = o.off; mx = (mouse.x - rect.left) * dpr; my = (mouse.y - rect.top) * dpr; reach = R * 0.62; mvx = mouse.vx * dpr; mvy = mouse.vy * dpr;
+      if (!o.off || o.off.length !== pts.length * 2) o.off = new Float32Array(pts.length * 2);
+      off = o.off; E = o.energy ** 1.4; H = o.hover; mx = o.cur.x; my = o.cur.y; rr = 1 / (0.5 * R);
     }
     ctx.fillStyle = `rgb(${col[0]},${col[1]},${col[2]})`;
     for (let i = 0; i < pts.length; i++) {
@@ -563,23 +573,26 @@ const Orbs = (() => {
       if (S.scan) { const d = Math.abs(y - scanY); a *= d < 0.14 ? 1.6 : 0.4; }
       if (S.fill) { a *= y > fillY ? 1.15 : 0.26; }
       let sx = cx + x * scale * R, sy = cy + y * scale * R;
+      let grow = 1;
       if (off) {
-        const j = i * 4;
-        let ox = off[j], oy = off[j + 1], vx = off[j + 2], vy = off[j + 3];
-        const dx = sx + ox - mx, dy = sy + oy - my, d = Math.hypot(dx, dy) || 1;
-        if (d < reach) {
-          const f = (1 - d / reach) ** 2 * (0.4 + 0.6 * depth);
-          vx += (dx / d) * f * 2.6 * dpr - (dy / d) * f * 1.8 * dpr + mvx * f * 0.25;
-          vy += (dy / d) * f * 2.6 * dpr + (dx / d) * f * 1.8 * dpr + mvy * f * 0.25;
+        const j = i * 2, h = (Math.sin(i * 12.9898) * 43758.5453) % 1, hr = h < 0 ? h + 1 : h;
+        let tx = 0, ty = 0;
+        if (H > 0.001) {
+          const dx = sx - mx, dy = sy - my, d = Math.hypot(dx, dy) || 1, f = H * Math.exp(-((d * rr) ** 2)) * (0.45 + 0.55 * depth) * R;
+          tx += (dx / d) * f * 0.3 - (dy / d) * f * 0.09; ty += (dy / d) * f * 0.3 + (dx / d) * f * 0.09;
         }
-        if (o.burst) { const ang = (i * 2.399) % 6.283, s = (2 + (i % 7)) * dpr * o.burst; vx += Math.cos(ang) * s; vy += Math.sin(ang) * s; }
-        vx += -ox * 0.045; vy += -oy * 0.045; vx *= 0.9; vy *= 0.9; ox += vx; oy += vy;
-        off[j] = ox; off[j + 1] = oy; off[j + 2] = vx; off[j + 3] = vy;
-        sx += ox; sy += oy;
-        a *= 1 + Math.min(0.6, Math.hypot(vx, vy) / (6 * dpr));
+        if (E > 0.001) {
+          const sp = (hr - 0.5) * 1.3 * E, c = Math.cos(sp), sn = Math.sin(sp), m = E * R * (0.22 + 0.7 * hr);
+          tx += (x * c - y * sn) * m; ty += (x * sn + y * c) * m;
+        }
+        const ease = 0.07 + 0.09 * hr;
+        off[j] += (tx - off[j]) * ease; off[j + 1] += (ty - off[j + 1]) * ease;
+        sx += off[j]; sy += off[j + 1];
+        const spread = Math.min(1, Math.hypot(off[j], off[j + 1]) / (0.35 * R));
+        grow = 1 + 0.35 * spread; a *= 1 + 0.35 * spread;
       }
       ctx.globalAlpha = Math.min(1, a);
-      const s = dot * (0.55 + 0.75 * depth);
+      const s = dot * (0.55 + 0.75 * depth) * grow;
       ctx.beginPath(); ctx.arc(sx, sy, s, 0, 6.2832); ctx.fill();
     }
     ctx.globalAlpha = 1;
@@ -597,10 +610,18 @@ const Orbs = (() => {
       if (o.cv.width !== w || o.cv.height !== h) { o.cv.width = w; o.cv.height = h; }
       o.ctx.clearRect(0, 0, w, h);
       const R = Math.min(w, h) * o.rf, cx = w / 2, cy = h / 2;
+      if (o.scatter) {
+        const mx = (mouse.x - rect.left) * dpr, my = (mouse.y - rect.top) * dpr;
+        if (!o.cur) o.cur = { x: mx, y: my };
+        o.cur.x += (mx - o.cur.x) * 0.22; o.cur.y += (my - o.cur.y) * 0.22;
+        const inside = Math.hypot(mx - cx, my - cy) < R * 1.4;
+        o.hover += ((inside ? 1 : 0) - o.hover) * 0.07;
+        if (inside) o.energy = Math.min(1, o.energy + Math.hypot(mouse.vx, mouse.vy) * dpr / (R * 3.2));
+        o.energy *= 0.968;
+      }
       const k = o.prev ? Math.min(1, (now - o.since) / 450) : 1;
       if (o.prev && k < 1) drawState(o, o.prev, t, 1 - k, R, cx, cy, dpr, rect, false); else o.prev = null;
       drawState(o, o.state, t, k, R, cx, cy, dpr, rect, o.scatter && !reduce);
-      o.burst = 0;
     }
     if (!reduce) requestAnimationFrame(frame);
   }
@@ -794,10 +815,26 @@ $("#ideas").onclick = (e) => {
 
 // =================================================================== library
 let library = [];
+const tok = (n) => n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : `${n}`;
+const usd = (x) => x >= 1 ? `$${x.toFixed(2)}` : x >= 0.01 ? `$${x.toFixed(3)}` : `$${x.toFixed(4)}`;
+const num = (n) => Number(n).toLocaleString("en-US");
+function usageCard(u) {
+  if (!u) return "";
+  const cin = u.prompt_tokens / 1e6 * u.price_in, cout = u.completion_tokens / 1e6 * u.price_out;
+  return `<h2>Cost to make <span>${u.estimated ? "≈ " : ""}${usd(u.cost_usd)}</span></h2>
+  <dl>
+    <dt>Model</dt><dd>${esc(u.label)}</dd>
+    <dt>Input tokens</dt><dd>${num(u.prompt_tokens)} × $${u.price_in.toFixed(2)} per 1M = ${usd(cin)}</dd>
+    <dt>Output tokens</dt><dd>${num(u.completion_tokens)} × $${u.price_out.toFixed(2)} per 1M = ${usd(cout)}</dd>
+    <dt>Total</dt><dd>${num(u.total_tokens)} tokens in ${u.calls} model calls</dd>
+  </dl>
+  <p class="note">${u.estimated ? "Estimated from the saved prompts (made before token counting). " : ""}List price, checked ${esc(u.prices_checked)}.</p>`;
+}
 const tile = (h) => `<button class="tile glare" data-id="${esc(h.id)}">
   <div class="thumb">${h.poster ? `<img src="${h.poster}" alt="" loading="lazy">` : `<div class="ph">${h.video ? "No preview" : "Not rendered"}</div>`}
   ${h.video && h.seconds ? `<span class="dur">${mmss(h.seconds)}</span>` : ""}</div>
-  <h3>${esc(h.title || h.topic)}</h3><p>${esc([cap(h.subject), h.chapter].filter(Boolean).join(", ") || " ")}</p></button>`;
+  <h3>${esc(h.title || h.topic)}</h3><p>${esc([cap(h.subject), h.chapter].filter(Boolean).join(", ") || " ")}</p>
+  ${h.usage ? `<p class="cost">${h.usage.estimated ? "≈ " : ""}${tok(h.usage.total_tokens)} tokens, ${usd(h.usage.cost_usd)}</p>` : ""}</button>`;
 async function loadLibrary() {
   library = await api("/api/history").catch(() => []);
   const rendered = library.filter((h) => h.video);
@@ -818,6 +855,7 @@ async function showWatch(id) {
   $("#wMeta").textContent = [cap(h.subject), h.chapter, h.level, h.seconds ? mmss(h.seconds) : ""].filter(Boolean).join(", ");
   $("#wDownload").href = h.video || "#"; $("#wDownload").hidden = !h.video;
   $("#wStory").href = `/media/${encodeURIComponent(h.id)}/storyboard.json`;
+  $("#wUsage").innerHTML = usageCard(h.usage); $("#wUsage").hidden = !h.usage;
   $("#wBrief").innerHTML = h.brief ? `<b>Brief</b>${esc(h.brief)}` : "";
   $("#wChapters").innerHTML = (h.chapters || []).map((c) => `<li><button data-t="${c.start}"><time>${mmss(c.start)}</time><span>${esc(c.title)}</span></button></li>`).join("");
 }
